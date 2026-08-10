@@ -60,7 +60,7 @@ st.markdown("""
 col_logo, col_teks = st.columns([1, 4])
 with col_logo:
     # GANTI TULISAN DI DALAM TANDA KUTIP INI DENGAN LINK RAW GITHUB-MU DARI LANGKAH 1
-    link_logo = "https://github.com/fafa8c30-774f-434e-a900-6645c0f949e5"
+    link_logo = "https://raw.githubusercontent.com/rizkinovaln03/sipenting-sumber/main/logo.png"
     
     try:
         st.image(link_logo, use_column_width=True)
