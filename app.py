@@ -110,14 +110,21 @@ with tab1:
             st.success("🏡 **PEMANTAUAN RUTIN (HIJAU):** Pertumbuhan aman. \n\n**Tindakan:** Lanjutkan ASI/MPASI bergizi seimbang. Pantau kembali bulan depan di Posyandu.")
 
         st.markdown("---")
-        # Logika Kirim ke Database
+        # Logika Kirim ke Database (REVISI)
         if st.button("💾 Simpan Data ke Database", type="primary"):
             url_form = "https://docs.google.com/forms/d/e/1FAIpQLSdPfLZYTQDU_gKlbGdtyqjymO4SU9cXOs-BxcepWuiadkwofQ/formResponse"
+            
+            # Memaksa semua data menjadi teks (str) agar tidak ditolak Google
             form_data = {
-                "entry.499068260": nama_anak, "entry.621064049": nama_ibu,
-                "entry.12380964": alamat, "entry.324089303": jk,
-                "entry.1082174849": round(usia_bulan, 1), "entry.1013822488": bb,
-                "entry.1215136987": tb, "entry.156349914": haz, "entry.142945675": status_haz
+                "entry.499068260": str(nama_anak), 
+                "entry.621064049": str(nama_ibu),
+                "entry.12380964": str(alamat), 
+                "entry.324089303": str(jk),
+                "entry.1082174849": str(round(usia_bulan, 1)), 
+                "entry.1013822488": str(bb),
+                "entry.1215136987": str(tb), 
+                "entry.156349914": str(haz), 
+                "entry.142945675": str(status_haz)
             }
             try:
                 response = requests.post(url_form, data=form_data)
@@ -125,9 +132,10 @@ with tab1:
                     st.success("🎉 Data berhasil di-upload ke Database Puskesmas Sumber!")
                     st.session_state.sudah_dihitung = False 
                 else:
-                    st.error("Gagal mengirim data. Silakan coba lagi.")
-            except:
-                st.error("Terjadi kesalahan koneksi saat menyimpan data.")
+                    # Memunculkan status error aslinya
+                    st.error(f"Gagal mengirim data. Kode Error Google: {response.status_code}.")
+            except Exception as e:
+                st.error(f"Terjadi kesalahan koneksi: {e}")
 
 # ==========================================
 # TAB 2: DASBOR DATA & ANALITIK
