@@ -59,13 +59,11 @@ st.markdown("""
 # --- 3. HEADER & LOGO ---
 col_logo, col_teks = st.columns([1, 4])
 with col_logo:
-    # GANTI TULISAN DI DALAM TANDA KUTIP INI DENGAN LINK RAW GITHUB-MU DARI LANGKAH 1
-    link_logo = "https://raw.githubusercontent.com/rizkinovaln03/sipenting-sumber/main/logo.png"
-    
-    try:
-        st.image(link_logo, use_column_width=True)
-    except:
-        st.error("Logo gagal dimuat.")
+    # Memaksa browser menampilkan gambar pakai HTML (Pasti Tampil!)
+    st.markdown(
+        '<img src="https://raw.githubusercontent.com/rizkinovaln03/sipenting-sumber/main/logo.png" style="width:100%; border-radius:10px;">', 
+        unsafe_allow_html=True
+    )
         
 with col_teks:
     st.markdown("<div class='main-title'>SIPENTING</div>", unsafe_allow_html=True)
