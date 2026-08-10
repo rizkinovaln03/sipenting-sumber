@@ -194,6 +194,22 @@ def get_tren_kunjungan_mingguan():
     agg = df.groupby("minggu").size().reset_index(name="jumlah")
     return agg.tail(8)  # 8 minggu terakhir
 
+def hapus_pengukuran(pengukuran_id):
+    """Menghapus 1 baris riwayat pengukuran yang salah input"""
+    conn = get_conn()
+    conn.execute("DELETE FROM pengukuran WHERE id = ?", (pengukuran_id,))
+    conn.commit()
+    conn.close()
+
+def hapus_pasien_total(pasien_id):
+    """Menghapus seluruh data pasien beserta semua riwayat pengukurannya"""
+    conn = get_conn()
+    # Hapus riwayat pengukurannya dulu (karena ada foreign key constraint)
+    conn.execute("DELETE FROM pengukuran WHERE pasien_id = ?", (pasien_id,))
+    # Baru hapus data utama pasiennya
+    conn.execute("DELETE FROM pasien WHERE id = ?", (pasien_id,))
+    conn.commit()
+    conn.close()
 
 init_db()
 
@@ -289,6 +305,8 @@ def tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur):
     else:
         tindak_lanjut = "PEMANTAUAN RUTIN (HIJAU): lanjut ASI/MPASI, kontrol bulan depan di Posyandu."
     return status, tindak_lanjut
+
+
 
 
 # --- 5. SISTEM TABS MULTI-HALAMAN ---
@@ -505,6 +523,45 @@ with tab2:
                 file_name=f"riwayat_{detail['nama'].replace(' ', '_')}_{date.today().isoformat()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+    # --- MULAI DARI SINI: PANEL MANAJEMEN DATA (ADMIN) ---
+            st.markdown("---")
+            st.markdown("### ⚙️ Manajemen & Koreksi Data (Khusus Admin)")
+            with st.expander("Buka Panel Koreksi Data (Butuh PIN)"):
+                pin_admin = st.text_input("Masukkan PIN Admin Puskesmas:", type="password")
+                
+                # Ganti "sumber123" dengan PIN rahasiamu
+                if pin_admin == "sumber123":
+                    st.success("Akses Terbuka. Gunakan dengan hati-hati!")
+                    
+                    # FITUR 1: HAPUS 1 BARIS PENGUKURAN
+                    if riwayat:
+                        st.markdown("**1. Hapus Kunjungan/Pengukuran Tertentu** (Jika salah ketik BB/TB)")
+                        # Buat opsi dropdown berdasarkan riwayat yang ada
+                        opsi_hapus = {f"Tgl: {r['tanggal_ukur']} | BB: {r['bb']} kg | TB: {r['tb']} cm": r["id"] for r in riwayat}
+                        pilih_hapus = st.selectbox("Pilih data kunjungan yang salah:", list(opsi_hapus.keys()))
+                        id_pengukuran_salah = opsi_hapus[pilih_hapus]
+                        
+                        if st.button("🗑️ Hapus Pengukuran Ini"):
+                            hapus_pengukuran(id_pengukuran_salah)
+                            st.success("Satu baris data pengukuran berhasil dihapus!")
+                            st.rerun() # Refresh halaman otomatis
+                    
+                    st.markdown("---")
+                    
+                    # FITUR 2: HAPUS TOTAL PASIEN
+                    st.markdown("**2. Hapus SELURUH Data Pasien Ini**")
+                    st.warning("⚠️ Peringatan: Aksi ini akan menghapus permanen identitas pasien dan seluruh riwayat Buku KIA-nya!")
+                    konfirmasi_hapus = st.checkbox(f"Saya yakin ingin menghapus permanen data {detail['nama']}")
+                    
+                    if konfirmasi_hapus:
+                        if st.button("🚨 Hapus Permanen Pasien", type="primary"):
+                            hapus_pasien_total(pid_monitor)
+                            st.success(f"Pasien {detail['nama']} berhasil dihapus dari database!")
+                            st.rerun() # Refresh halaman otomatis
+                            
+                elif pin_admin != "":
+                    st.error("❌ PIN Salah! Akses ditolak.")
+            # --- BATAS AKHIR PANEL MANAJEMEN DATA ---
 
     st.markdown("---")
     st.subheader("💾 Export Database Lengkap")
