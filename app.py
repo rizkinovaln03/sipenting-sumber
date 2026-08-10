@@ -9,23 +9,76 @@ import numpy as np
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="SIPENTING - Puskesmas Sumber", page_icon="👶", layout="wide")
 
-# --- 2. HEADER & LOGO ---
+# --- 2. INJEKSI CUSTOM CSS (GLOW UP DESAIN) ---
+st.markdown("""
+    <style>
+    /* Mengubah warna background utama menjadi biru sangat muda/pastel */
+    .stApp {
+        background-color: #F4F9F9;
+    }
+    
+    /* Mempercantik kotak hasil perhitungan (Metric Cards) */
+    div[data-testid="metric-container"] {
+        background-color: white;
+        border: 1px solid #E0E0E0;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
+    }
+
+    /* Mempercantik tombol Hitung dan Simpan */
+    .stButton>button {
+        border-radius: 8px;
+        font-weight: bold;
+        transition: 0.3s;
+    }
+    .stButton>button:hover {
+        transform: scale(1.02);
+    }
+    
+    /* Merapikan Judul Utama */
+    .main-title {
+        text-align: left;
+        color: #1A5276;
+        font-weight: 800;
+        font-size: 3rem;
+        margin-bottom: -15px;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+    }
+    .sub-title {
+        text-align: left;
+        color: #2E86C1;
+        font-size: 1.2rem;
+        font-style: italic;
+        margin-bottom: 20px;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- 3. HEADER & LOGO ---
 col_logo, col_teks = st.columns([1, 4])
 with col_logo:
-    # Memanggil file logo yang sudah diupload ke GitHub
+    # GANTI TULISAN DI DALAM TANDA KUTIP INI DENGAN LINK RAW GITHUB-MU DARI LANGKAH 1
+    link_logo = "https://raw.githubusercontent.com/USERNAME_KAMU/sipenting-sumber/main/image_7e57fa.png"
+    
     try:
-        st.image("logo.png", use_column_width=True)
+        st.image(link_logo, use_column_width=True)
     except:
-        st.write("*(Logo Puskesmas Sumber)*")
+        st.error("Logo gagal dimuat.")
         
 with col_teks:
-    st.markdown("<h1 style='text-align: left; color: #2E86C1; margin-bottom: 0px;'>SIPENTING</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align: left; margin-top: 0px;'>Sistem Pencegahan & Edukasi Stunting Terintegrasi</h3>", unsafe_allow_html=True)
+    st.markdown("<div class='main-title'>SIPENTING</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sub-title'>Sistem Pencegahan & Edukasi Stunting Terintegrasi | Puskesmas Sumber</div>", unsafe_allow_html=True)
 
 st.markdown("---")
 
-# --- 3. SISTEM TABS MULTI-HALAMAN ---
-tab1, tab2, tab3 = st.tabs(["🧮 Skrining & Kurva", "📊 Dasbor Data (Admin)", "⚖️ Etikomedikolegal & Referensi"])
+# --- 4. SISTEM TABS MULTI-HALAMAN ---
+tab1, tab2, tab3 = st.tabs(["🧮 Skrining & Kurva", "📊 Dasbor Data", "⚖️ Referensi Klinis"])
+
+# ==========================================
+# (LANJUTKAN DENGAN KODE TAB 1, 2, 3 SEPERTI SEBELUMNYA)
+# ==========================================
 
 # ==========================================
 # TAB 1: KALKULATOR & KURVA PERTUMBUHAN
