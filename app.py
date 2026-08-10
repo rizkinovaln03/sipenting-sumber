@@ -218,7 +218,11 @@ def hapus_pasien_total(pasien_id):
 init_db()
 
 # --- 1. KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="SIPENTING - Puskesmas Sumber", page_icon="👶", layout="wide")
+st.set_page_config(
+    page_title="SIPENTING - Puskesmas Sumber", 
+    page_icon="https://raw.githubusercontent.com/rizkinovaln03/sipenting-sumber/main/sipenting.png", 
+    layout="wide"
+)
 
 # --- 2. INJEKSI CUSTOM CSS ---
 st.markdown("""
@@ -249,13 +253,25 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 3. HEADER & LOGO ---
-col_logo, col_teks = st.columns([1, 4])
-with col_logo:
+col_logo1, col_logo2, col_teks = st.columns([1, 1.2, 4])
+
+with col_logo1:
+    # Logo Puskesmas Sumber (Lama)
     st.markdown(
         '<img src="https://raw.githubusercontent.com/rizkinovaln03/sipenting-sumber/main/logo.png" style="width:100%; border-radius:10px;">',
         unsafe_allow_html=True
     )
+
+with col_logo2:
+    # Logo SiPENTING (Baru)
+    st.markdown(
+        '<img src="https://raw.githubusercontent.com/rizkinovaln03/sipenting-sumber/main/sipenting.png" style="width:100%; border-radius:10px;">', 
+        unsafe_allow_html=True
+    )
+        
 with col_teks:
+    # Margin agar teks sejajar dengan logo
+    st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
     st.markdown("<div class='main-title'>SIPENTING</div>", unsafe_allow_html=True)
     st.markdown("<div class='sub-title'>Sistem Pencegahan & Edukasi Stunting Terintegrasi | Puskesmas Sumber</div>", unsafe_allow_html=True)
 
