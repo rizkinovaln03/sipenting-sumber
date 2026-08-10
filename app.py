@@ -228,12 +228,9 @@ st.set_page_config(
 st.markdown("""
     <style>
     /* --- MENGHILANGKAN JEJAK STREAMLIT --- */
-    /* Sembunyikan menu titik tiga dan logo GitHub di kanan atas */
-    [data-testid="stToolbar"] { visibility: hidden !important; }
-    /* Sembunyikan tulisan 'Made with Streamlit' di bawah */
-    footer { visibility: hidden !important; }
-    
-    /* CATATAN: Header atas sengaja TIDAK disembunyikan agar tombol panah menu (Sidebar) di HP tetap bisa ditekan! */
+    [data-testid="stHeader"] { visibility: hidden; }
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
 
     /* CSS Desain Bawaanmu */
     .stApp { background-color: #F4F9F9; }
