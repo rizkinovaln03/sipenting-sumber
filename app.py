@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import sqlite3
 import os
+import io
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 import plotly.graph_objects as go
@@ -140,6 +141,44 @@ def get_ringkasan_status_gizi():
     """).fetchall()
     conn.close()
     return {r["status_gizi"]: r["jumlah"] for r in rows}
+
+
+def get_semua_data_gabungan():
+    """Semua pasien + seluruh riwayat pengukurannya, digabung (join) untuk keperluan export/rekap."""
+    conn = get_conn()
+    rows = conn.execute("""
+        SELECT
+            pa.no_rm, pa.nama AS nama_anak, pa.nama_ibu, pa.alamat,
+            pa.tanggal_lahir, pa.jenis_kelamin,
+            pe.tanggal_ukur, pe.usia_bulan, pe.bb, pe.tb,
+            pe.waz, pe.haz, pe.whz, pe.status_gizi, pe.red_flag,
+            pe.tindak_lanjut, pe.catatan
+        FROM pasien pa
+        LEFT JOIN pengukuran pe ON pe.pasien_id = pa.id
+        ORDER BY pa.nama, pe.tanggal_ukur
+    """).fetchall()
+    conn.close()
+    return pd.DataFrame([dict(r) for r in rows])
+
+
+def buat_file_excel(df_pasien, df_gabungan, df_riwayat_pasien_terpilih=None, nama_pasien_terpilih=None):
+    """Bikin file Excel di memori (BytesIO) dengan beberapa sheet, siap didownload user."""
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df_pasien.to_excel(writer, sheet_name="Daftar Pasien", index=False)
+        df_gabungan.to_excel(writer, sheet_name="Rekap Semua Pengukuran", index=False)
+        if df_riwayat_pasien_terpilih is not None and not df_riwayat_pasien_terpilih.empty:
+            sheet_name = f"Riwayat - {nama_pasien_terpilih}"[:31]  # batas nama sheet Excel = 31 karakter
+            df_riwayat_pasien_terpilih.to_excel(writer, sheet_name=sheet_name, index=False)
+
+        # Rapikan lebar kolom biar gak mepet
+        for sheet in writer.sheets.values():
+            for col_cells in sheet.columns:
+                panjang_maks = max((len(str(c.value)) for c in col_cells if c.value is not None), default=10)
+                sheet.column_dimensions[col_cells[0].column_letter].width = min(panjang_maks + 3, 40)
+
+    buffer.seek(0)
+    return buffer
 
 
 def get_tren_kunjungan_mingguan():
@@ -452,6 +491,38 @@ with tab2:
             fig_tren.add_hline(y=-3, line_dash="dot", line_color="red", annotation_text="-3 SD (Severely Stunted)")
             fig_tren.update_layout(xaxis_title="Tanggal Kunjungan", yaxis_title="HAZ (SD)", height=350)
             st.plotly_chart(fig_tren, use_container_width=True)
+
+            df_pasien_ini = pd.DataFrame([dict(detail)])
+            excel_pasien = buat_file_excel(
+                df_pasien=df_pasien_ini,
+                df_gabungan=get_semua_data_gabungan(),
+                df_riwayat_pasien_terpilih=df_riwayat,
+                nama_pasien_terpilih=detail["nama"]
+            )
+            st.download_button(
+                "📥 Export Riwayat Pasien Ini ke Excel",
+                data=excel_pasien,
+                file_name=f"riwayat_{detail['nama'].replace(' ', '_')}_{date.today().isoformat()}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+    st.markdown("---")
+    st.subheader("💾 Export Database Lengkap")
+    df_semua_pasien = pd.DataFrame([dict(p) for p in semua_pasien]) if semua_pasien else pd.DataFrame()
+    df_gabungan_semua = get_semua_data_gabungan()
+    if df_gabungan_semua.empty:
+        st.info("Belum ada data untuk diexport.")
+    else:
+        st.caption(f"Total {df_semua_pasien['nama'].nunique() if not df_semua_pasien.empty else 0} pasien, {len(df_gabungan_semua)} baris pengukuran.")
+        excel_semua = buat_file_excel(df_pasien=df_semua_pasien, df_gabungan=df_gabungan_semua)
+        st.download_button(
+            "📥 Download Rekap Seluruh Pasien & Pengukuran (.xlsx)",
+            data=excel_semua,
+            file_name=f"sipenting_rekap_{date.today().isoformat()}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary"
+        )
+        st.caption("Isinya: sheet Daftar Pasien + sheet Rekap Semua Pengukuran + sheet riwayat pasien terpilih (kalau ada). Cocok buat lapor ke dinas kesehatan atau backup manual.")
 
     st.markdown("---")
     st.subheader("📊 Ringkasan Populasi (data asli dari database, bukan simulasi)")
