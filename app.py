@@ -60,7 +60,7 @@ st.markdown("""
 col_logo, col_teks = st.columns([1, 4])
 with col_logo:
     # GANTI TULISAN DI DALAM TANDA KUTIP INI DENGAN LINK RAW GITHUB-MU DARI LANGKAH 1
-    link_logo = "import streamlit as st
+    link_logo = "https://github.com/fafa8c30-774f-434e-a900-6645c0f949e5"
 import requests
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
