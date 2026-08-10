@@ -223,6 +223,12 @@ st.set_page_config(page_title="SIPENTING - Puskesmas Sumber", page_icon="👶", 
 # --- 2. INJEKSI CUSTOM CSS ---
 st.markdown("""
     <style>
+    /* --- MENGHILANGKAN JEJAK STREAMLIT --- */
+    [data-testid="stHeader"] { visibility: hidden; }
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
+
+    /* CSS Desain Bawaanmu */
     .stApp { background-color: #F4F9F9; }
     div[data-testid="metric-container"] {
         background-color: white; border: 1px solid #E0E0E0; padding: 15px;
