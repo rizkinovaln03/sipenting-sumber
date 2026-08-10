@@ -3,3 +3,5 @@ requests
 python-dateutil
 plotly
 pandas
+numpy
+pygrowup
