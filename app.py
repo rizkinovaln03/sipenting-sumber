@@ -353,147 +353,159 @@ with tab1:
     if "sudah_dihitung" not in st.session_state:
         st.session_state.sudah_dihitung = False
 
-    st.sidebar.header("🔍 Cari Pasien")
-    kata_kunci = st.sidebar.text_input("No. RM atau Nama Pasien", key="kata_kunci_cari")
-    hasil_cari = cari_pasien(kata_kunci) if kata_kunci else []
+    # KITA BAGI JADI 2 KOLOM (Kiri: Form Input, Kanan: Hasil & Kurva)
+    # Di layar HP, Streamlit otomatis mengubahnya jadi atas-bawah (Sangat ramah HP!)
+    col_form, col_hasil = st.columns([1.2, 2.5])
 
-    if hasil_cari:
-        opsi = {f"{r['nama']} (RM: {r['no_rm'] or '-'}, lahir {r['tanggal_lahir']})": r["id"] for r in hasil_cari}
-        pilihan = st.sidebar.selectbox("Pasien ditemukan, pilih salah satu:", list(opsi.keys()))
-        if st.sidebar.button("✅ Gunakan Data Pasien Ini"):
-            st.session_state.pasien_id_terpilih = opsi[pilihan]
-            st.session_state.sudah_dihitung = False
-    elif kata_kunci:
-        st.sidebar.info("Tidak ditemukan. Akan didaftarkan sebagai pasien baru di bawah.")
+    with col_form:
+        st.header("🔍 Cari Pasien")
+        kata_kunci = st.text_input("No. RM atau Nama Pasien", key="kata_kunci_cari")
+        hasil_cari = cari_pasien(kata_kunci) if kata_kunci else []
 
-    if st.session_state.pasien_id_terpilih:
-        if st.sidebar.button("➕ Ganti ke Pasien Baru"):
-            st.session_state.pasien_id_terpilih = None
-            st.session_state.sudah_dihitung = False
-
-    st.sidebar.markdown("---")
-    st.sidebar.header("📋 Form Data Pasien")
-
-    pasien_lama = get_pasien(st.session_state.pasien_id_terpilih) if st.session_state.pasien_id_terpilih else None
-
-    if pasien_lama:
-        riwayat_lama = get_riwayat_pengukuran(pasien_lama["id"])
-        st.sidebar.success(f"📖 Pasien terdaftar: **{pasien_lama['nama']}** — {len(riwayat_lama)}x pengukuran sebelumnya"
-                            + (f", terakhir {riwayat_lama[-1]['tanggal_ukur']}" if riwayat_lama else ""))
-        no_rm = st.sidebar.text_input("No. RM", value=pasien_lama["no_rm"] or "", disabled=True)
-        nama_anak = st.sidebar.text_input("Nama Anak", value=pasien_lama["nama"], disabled=True)
-        nama_ibu = st.sidebar.text_input("Nama Ibu", value=pasien_lama["nama_ibu"] or "", disabled=True)
-        alamat = st.sidebar.text_area("Alamat / RT RW", value=pasien_lama["alamat"] or "", disabled=True)
-        tgl_lahir_default = datetime.strptime(pasien_lama["tanggal_lahir"], "%Y-%m-%d").date()
-        jk = pasien_lama["jenis_kelamin"]
-        st.sidebar.text_input("Jenis Kelamin", value=jk, disabled=True)
-    else:
-        no_rm = st.sidebar.text_input("No. RM Puskesmas (opsional)")
-        nama_anak = st.sidebar.text_input("Nama Anak")
-        nama_ibu = st.sidebar.text_input("Nama Ibu")
-        alamat = st.sidebar.text_area("Alamat / RT RW")
-        tgl_lahir_default = date(2023, 1, 1)
-        jk = None
-
-    st.sidebar.markdown("---")
-    tgl_ukur = st.sidebar.date_input("Tanggal Pengukuran", value=datetime.today())
-    tgl_lahir = st.sidebar.date_input("Tanggal Lahir", value=tgl_lahir_default,
-                                       min_value=datetime(2020, 1, 1), max_value=datetime.today(),
-                                       disabled=bool(pasien_lama))
-
-    selisih = relativedelta(tgl_ukur, tgl_lahir)
-    usia_bulan = selisih.years * 12 + selisih.months + (selisih.days / 30.44)
-    st.sidebar.info(f"Usia Presisi: {selisih.years} Tahun, {selisih.months} Bulan")
-    if usia_bulan > 60:
-        st.sidebar.warning("⚠️ Standar WHO pada aplikasi ini hanya mencakup usia 0-60 bulan (0-5 tahun).")
-
-    if not pasien_lama:
-        jk = st.sidebar.selectbox("Jenis Kelamin", ["Laki-laki", "Perempuan"])
-
-    bb = st.sidebar.number_input("Berat Badan (kg)", min_value=1.0, step=0.1)
-    tb = st.sidebar.number_input("Tinggi/Panjang Badan (cm)", min_value=30.0, step=0.1)
-    red_flags_aktif = st.sidebar.checkbox("🚨 Tanda Bahaya (Kelainan Bawaan / BB stagnan 14 hari)")
-    catatan_kunjungan = st.sidebar.text_area("Catatan kunjungan (opsional)")
-
-    if st.sidebar.button("🧮 Hitung & Analisis Gizi", type="primary"):
-        if not pasien_lama and (nama_anak == "" or nama_ibu == ""):
-            st.sidebar.error("⚠️ Nama Anak dan Ibu wajib diisi!")
-        elif usia_bulan > 60 or usia_bulan < 0:
-            st.sidebar.error("⚠️ Standar WHO Child Growth Standards di aplikasi ini hanya berlaku 0-60 bulan.")
-        else:
-            waz, haz, whz, errors = hitung_zscore(bb, tb, usia_bulan, jk)
-            st.session_state.waz, st.session_state.haz, st.session_state.whz = waz, haz, whz
-            st.session_state.zscore_errors = errors
-            st.session_state.sudah_dihitung = True
-
-    if st.session_state.sudah_dihitung:
-        waz, haz, whz = st.session_state.waz, st.session_state.haz, st.session_state.whz
-
-        if st.session_state.get("zscore_errors"):
-            for err in st.session_state.zscore_errors:
-                st.error(f"⚠️ Gagal menghitung salah satu Z-score: {err}")
-
-        if haz is None:
-            st.warning("HAZ tidak dapat dihitung untuk input ini. Periksa kembali data usia/tinggi badan.")
-        else:
-            status_haz, tindak_lanjut = tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur)
-            nama_tampil = pasien_lama["nama"] if pasien_lama else nama_anak
-
-            st.success(f"✅ Analisis Gizi untuk **{nama_tampil}** ({jk}, usia {usia_bulan:.1f} bulan, {tgl_ukur.strftime('%d %B %Y')}).")
-
-            col_res1, col_res2, col_res3 = st.columns(3)
-            col_res1.metric("Berat/Umur (WAZ)", f"{waz} SD" if waz is not None else "N/A")
-            col_res2.metric("Tinggi/Umur (HAZ)", f"{haz} SD", status_haz, delta_color="off" if haz < -2 else "normal")
-            col_res3.metric("Berat/Tinggi (WHZ)", f"{whz} SD" if whz is not None else "N/A")
-
-            st.markdown("---")
-            st.subheader(f"📈 Kurva Pertumbuhan WHO Tinggi/Panjang-menurut-Umur ({jk})")
-            df_kurva = get_kurva_haz(jk)
-
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df_kurva["bulan"], y=df_kurva["median"], mode='lines',
-                                      name='Median (0 SD)', line=dict(color='green', width=2)))
-            fig.add_trace(go.Scatter(x=df_kurva["bulan"], y=df_kurva["sd2neg"], mode='lines',
-                                      name='-2 SD (Stunted)', line=dict(color='orange', width=2, dash='dash')))
-            fig.add_trace(go.Scatter(x=df_kurva["bulan"], y=df_kurva["sd3neg"], mode='lines',
-                                      name='-3 SD (Severely Stunted)', line=dict(color='red', width=2, dash='dot')))
-
-            # Titik-titik riwayat pengukuran sebelumnya (kalau pasien lama) -> jadi trajektori, bukan cuma 1 titik
-            if pasien_lama:
-                riwayat = get_riwayat_pengukuran(pasien_lama["id"])
-                if riwayat:
-                    x_riwayat = [r["usia_bulan"] for r in riwayat]
-                    y_riwayat = [r["tb"] for r in riwayat]
-                    fig.add_trace(go.Scatter(x=x_riwayat, y=y_riwayat, mode='lines+markers',
-                                              name='Riwayat Kunjungan', line=dict(color='#7d3c98', width=2, dash='dot'),
-                                              marker=dict(size=8)))
-
-            fig.add_trace(go.Scatter(x=[usia_bulan], y=[tb], mode='markers', name=f'Kunjungan Ini: {nama_tampil}',
-                                      marker=dict(color='blue', size=14, symbol='star')))
-            fig.update_layout(title=f"Posisi Tinggi/Panjang Badan pada Kurva WHO ({jk}, 0-60 bulan)",
-                               xaxis_title="Usia (Bulan)", yaxis_title="Tinggi/Panjang Badan (cm)", height=420)
-            st.plotly_chart(fig, use_container_width=True)
-            st.caption("Kurva dari tabel LMS resmi WHO Child Growth Standards (2006). Titik ungu = riwayat kunjungan pasien ini.")
-
-            st.markdown("---")
-            st.subheader("💡 Intervensi & Tindak Lanjut")
-            warna_map = {"RUJUKAN": st.error, "PMT": st.warning, "PEMANTAUAN": st.success}
-            for kunci, fungsi in warna_map.items():
-                if tindak_lanjut.startswith(kunci):
-                    fungsi(f"**{tindak_lanjut}**")
-
-            st.markdown("---")
-            if st.button("💾 Simpan ke Rekam Pasien (Database Puskesmas)", type="primary"):
-                if pasien_lama:
-                    pasien_id = pasien_lama["id"]
-                else:
-                    pasien_id = simpan_pasien_baru(no_rm or None, nama_anak, nama_ibu, alamat, tgl_lahir, jk)
-                simpan_pengukuran(pasien_id, tgl_ukur, usia_bulan, bb, tb, waz, haz, whz,
-                                   status_haz, red_flags_aktif, tindak_lanjut, catatan_kunjungan)
-                st.success("🎉 Data pengukuran berhasil disimpan ke rekam pasien! Cek riwayatnya di tab 📖 Buku KIA & Monitoring.")
+        if hasil_cari:
+            opsi = {f"{r['nama']} (RM: {r['no_rm'] or '-'})": r["id"] for r in hasil_cari}
+            pilihan = st.selectbox("Pasien ditemukan, pilih salah satu:", list(opsi.keys()))
+            if st.button("✅ Gunakan Data Pasien Ini"):
+                st.session_state.pasien_id_terpilih = opsi[pilihan]
                 st.session_state.sudah_dihitung = False
-                st.session_state.pasien_id_terpilih = pasien_id
+                st.rerun() # Refresh agar state langsung terupdate
+        elif kata_kunci:
+            st.info("Tidak ditemukan. Akan didaftarkan sebagai pasien baru di bawah.")
 
+        if st.session_state.pasien_id_terpilih:
+            if st.button("➕ Ganti ke Pasien Baru"):
+                st.session_state.pasien_id_terpilih = None
+                st.session_state.sudah_dihitung = False
+                st.rerun()
+
+        st.markdown("---")
+        st.header("📋 Form Data Pasien")
+
+        pasien_lama = get_pasien(st.session_state.pasien_id_terpilih) if st.session_state.pasien_id_terpilih else None
+
+        if pasien_lama:
+            riwayat_lama = get_riwayat_pengukuran(pasien_lama["id"])
+            st.success(f"📖 Pasien terdaftar: **{pasien_lama['nama']}** — {len(riwayat_lama)}x pengukuran"
+                       + (f", terakhir {riwayat_lama[-1]['tanggal_ukur']}" if riwayat_lama else ""))
+            no_rm = st.text_input("No. RM", value=pasien_lama["no_rm"] or "", disabled=True)
+            nama_anak = st.text_input("Nama Anak", value=pasien_lama["nama"], disabled=True)
+            nama_ibu = st.text_input("Nama Ibu", value=pasien_lama["nama_ibu"] or "", disabled=True)
+            alamat = st.text_area("Alamat / RT RW", value=pasien_lama["alamat"] or "", disabled=True)
+            tgl_lahir_default = datetime.strptime(pasien_lama["tanggal_lahir"], "%Y-%m-%d").date()
+            jk = pasien_lama["jenis_kelamin"]
+            st.text_input("Jenis Kelamin", value=jk, disabled=True)
+        else:
+            no_rm = st.text_input("No. RM Puskesmas (opsional)")
+            nama_anak = st.text_input("Nama Anak")
+            nama_ibu = st.text_input("Nama Ibu")
+            alamat = st.text_area("Alamat / RT RW")
+            tgl_lahir_default = date(2023, 1, 1)
+            jk = None
+
+        st.markdown("---")
+        tgl_ukur = st.date_input("Tanggal Pengukuran", value=datetime.today())
+        tgl_lahir = st.date_input("Tanggal Lahir", value=tgl_lahir_default,
+                                   min_value=datetime(2020, 1, 1), max_value=datetime.today(),
+                                   disabled=bool(pasien_lama))
+
+        selisih = relativedelta(tgl_ukur, tgl_lahir)
+        usia_bulan = selisih.years * 12 + selisih.months + (selisih.days / 30.44)
+        st.info(f"Usia Presisi: {selisih.years} Tahun, {selisih.months} Bulan")
+        
+        if usia_bulan > 60:
+            st.warning("⚠️ Standar WHO pada aplikasi ini hanya mencakup usia 0-60 bulan.")
+
+        if not pasien_lama:
+            jk = st.selectbox("Jenis Kelamin", ["Laki-laki", "Perempuan"])
+
+        bb = st.number_input("Berat Badan (kg)", min_value=1.0, step=0.1)
+        tb = st.number_input("Tinggi/Panjang Badan (cm)", min_value=30.0, step=0.1)
+        red_flags_aktif = st.checkbox("🚨 Tanda Bahaya (Kelainan Bawaan / BB stagnan)")
+        catatan_kunjungan = st.text_area("Catatan kunjungan (opsional)")
+
+        # Tombol dibikin penuhi lebar kolom
+        if st.button("🧮 Hitung & Analisis Gizi", type="primary", use_container_width=True):
+            if not pasien_lama and (nama_anak == "" or nama_ibu == ""):
+                st.error("⚠️ Nama Anak dan Ibu wajib diisi!")
+            elif usia_bulan > 60 or usia_bulan < 0:
+                st.error("⚠️ Standar WHO Child Growth Standards di aplikasi ini hanya berlaku 0-60 bulan.")
+            else:
+                waz, haz, whz, errors = hitung_zscore(bb, tb, usia_bulan, jk)
+                st.session_state.waz, st.session_state.haz, st.session_state.whz = waz, haz, whz
+                st.session_state.zscore_errors = errors
+                st.session_state.sudah_dihitung = True
+
+    # ---- BAGIAN KANAN: HASIL DAN KURVA ----
+    with col_hasil:
+        if st.session_state.sudah_dihitung:
+            waz, haz, whz = st.session_state.waz, st.session_state.haz, st.session_state.whz
+
+            if st.session_state.get("zscore_errors"):
+                for err in st.session_state.zscore_errors:
+                    st.error(f"⚠️ Gagal menghitung salah satu Z-score: {err}")
+
+            if haz is None:
+                st.warning("HAZ tidak dapat dihitung untuk input ini. Periksa kembali data usia/tinggi badan.")
+            else:
+                status_haz, tindak_lanjut = tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur)
+                nama_tampil = pasien_lama["nama"] if pasien_lama else nama_anak
+
+                st.success(f"✅ Analisis Gizi untuk **{nama_tampil}** ({jk}, usia {usia_bulan:.1f} bulan, {tgl_ukur.strftime('%d %B %Y')}).")
+
+                col_res1, col_res2, col_res3 = st.columns(3)
+                col_res1.metric("Berat/Umur (WAZ)", f"{waz} SD" if waz is not None else "N/A")
+                col_res2.metric("Tinggi/Umur (HAZ)", f"{haz} SD", status_haz, delta_color="off" if haz < -2 else "normal")
+                col_res3.metric("Berat/Tinggi (WHZ)", f"{whz} SD" if whz is not None else "N/A")
+
+                st.markdown("---")
+                st.subheader(f"📈 Kurva Pertumbuhan WHO ({jk})")
+                df_kurva = get_kurva_haz(jk)
+
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=df_kurva["bulan"], y=df_kurva["median"], mode='lines',
+                                          name='Median (0 SD)', line=dict(color='green', width=2)))
+                fig.add_trace(go.Scatter(x=df_kurva["bulan"], y=df_kurva["sd2neg"], mode='lines',
+                                          name='-2 SD (Stunted)', line=dict(color='orange', width=2, dash='dash')))
+                fig.add_trace(go.Scatter(x=df_kurva["bulan"], y=df_kurva["sd3neg"], mode='lines',
+                                          name='-3 SD (Severely Stunted)', line=dict(color='red', width=2, dash='dot')))
+
+                if pasien_lama:
+                    riwayat = get_riwayat_pengukuran(pasien_lama["id"])
+                    if riwayat:
+                        x_riwayat = [r["usia_bulan"] for r in riwayat]
+                        y_riwayat = [r["tb"] for r in riwayat]
+                        fig.add_trace(go.Scatter(x=x_riwayat, y=y_riwayat, mode='lines+markers',
+                                                  name='Riwayat Kunjungan', line=dict(color='#7d3c98', width=2, dash='dot'),
+                                                  marker=dict(size=8)))
+
+                fig.add_trace(go.Scatter(x=[usia_bulan], y=[tb], mode='markers', name=f'Kunjungan Ini: {nama_tampil}',
+                                          marker=dict(color='blue', size=14, symbol='star')))
+                fig.update_layout(xaxis_title="Usia (Bulan)", yaxis_title="Tinggi/Panjang Badan (cm)", height=420)
+                st.plotly_chart(fig, use_container_width=True)
+
+                st.markdown("---")
+                st.subheader("💡 Intervensi & Tindak Lanjut")
+                warna_map = {"RUJUKAN": st.error, "PMT": st.warning, "PEMANTAUAN": st.success}
+                for kunci, fungsi in warna_map.items():
+                    if tindak_lanjut.startswith(kunci):
+                        fungsi(f"**{tindak_lanjut}**")
+
+                st.markdown("---")
+                if st.button("💾 Simpan ke Rekam Pasien (Database)", type="primary"):
+                    if pasien_lama:
+                        pasien_id = pasien_lama["id"]
+                    else:
+                        pasien_id = simpan_pasien_baru(no_rm or None, nama_anak, nama_ibu, alamat, tgl_lahir, jk)
+                    simpan_pengukuran(pasien_id, tgl_ukur, usia_bulan, bb, tb, waz, haz, whz,
+                                       status_haz, red_flags_aktif, tindak_lanjut, catatan_kunjungan)
+                    st.success("🎉 Data disimpan ke rekam pasien! Cek riwayatnya di tab Buku KIA.")
+                    st.session_state.sudah_dihitung = False
+                    st.session_state.pasien_id_terpilih = pasien_id
+                    st.rerun() # Refresh instan
+        else:
+            # Pesan default jika belum klik Hitung
+            st.info("👈 Silakan isi form pendaftaran/pengukuran di sebelah kiri, lalu klik 'Hitung & Analisis Gizi' untuk menampilkan hasil Z-Score.")
+            
 # ==========================================
 # TAB 2: BUKU KIA DIGITAL & MONITORING PASIEN
 # ==========================================
