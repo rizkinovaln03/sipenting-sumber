@@ -253,27 +253,30 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 3. HEADER & LOGO ---
-# Jatah layar diperbesar jadi 1.5 dan 2 agar logo tidak bantet
-col_logo1, col_logo2, col_teks = st.columns([1.5, 2, 4.5])
+# Membagi 3 kolom: [Logo Puskesmas Kiri] - [Teks di Tengah] - [Logo SiPENTING Kanan]
+# Jatah layarnya disesuaikan: 1.2 (Kiri), 5 (Tengah), dan 1.8 (Kanan)
+col_kiri, col_tengah, col_kanan = st.columns([1.2, 5, 1.8])
 
-with col_logo1:
-    # Sedikit margin atas agar logo Puskesmas sejajar ke tengah
+with col_kiri:
+    # 1. LOGO PUSKESMAS (KIRI)
     st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
     st.markdown(
         '<img src="https://raw.githubusercontent.com/rizkinovaln03/sipenting-sumber/main/logo.png" style="width:100%; object-fit:contain;">',
         unsafe_allow_html=True
     )
 
-with col_logo2:
+with col_tengah:
+    # 2. TEKS JUDUL (TENGAH)
+    st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div class='main-title'>SIPENTING</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sub-title'>Sistem Pencegahan & Edukasi Stunting Terintegrasi | Puskesmas Sumber</div>", unsafe_allow_html=True)
+
+with col_kanan:
+    # 3. LOGO SIPENTING (KANAN)
     st.markdown(
         '<img src="https://raw.githubusercontent.com/rizkinovaln03/sipenting-sumber/main/sipenting.png" style="width:100%; object-fit:contain;">', 
         unsafe_allow_html=True
     )
-        
-with col_teks:
-    st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-    st.markdown("<div class='main-title'>SIPENTING</div>", unsafe_allow_html=True)
-    st.markdown("<div class='sub-title'>Sistem Pencegahan & Edukasi Stunting Terintegrasi | Puskesmas Sumber</div>", unsafe_allow_html=True)
 
 st.markdown("---")
 
