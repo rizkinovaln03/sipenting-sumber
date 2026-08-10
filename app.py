@@ -14,7 +14,7 @@ col_logo, col_teks = st.columns([1, 4])
 with col_logo:
     # Memanggil file logo yang sudah diupload ke GitHub
     try:
-        st.image("image_7e57fa.png", use_column_width=True)
+        st.image("logo.png", use_column_width=True)
     except:
         st.write("*(Logo Puskesmas Sumber)*")
         
