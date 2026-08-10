@@ -203,13 +203,17 @@ def hapus_pengukuran(pengukuran_id):
 
 def hapus_pasien_total(pasien_id):
     """Menghapus seluruh data pasien beserta semua riwayat pengukurannya"""
-    conn = get_conn()
-    # Hapus riwayat pengukurannya dulu (karena ada foreign key constraint)
-    conn.execute("DELETE FROM pengukuran WHERE pasien_id = ?", (pasien_id,))
-    # Baru hapus data utama pasiennya
-    conn.execute("DELETE FROM pasien WHERE id = ?", (pasien_id,))
-    conn.commit()
-    conn.close()
+    try:
+        conn = get_conn()
+        # Hapus riwayat pengukurannya dulu (karena ada foreign key constraint)
+        conn.execute("DELETE FROM pengukuran WHERE pasien_id = ?", (pasien_id,))
+        # Baru hapus data utama pasiennya!
+        conn.execute("DELETE FROM pasien WHERE id = ?", (pasien_id,))
+        conn.commit()
+        conn.close()
+        return True, ""
+    except Exception as e:
+        return False, str(e)
 
 init_db()
 
@@ -555,9 +559,19 @@ with tab2:
                     
                     if konfirmasi_hapus:
                         if st.button("🚨 Hapus Permanen Pasien", type="primary"):
-                            hapus_pasien_total(pid_monitor)
-                            st.success(f"Pasien {detail['nama']} berhasil dihapus dari database!")
-                            st.rerun() # Refresh halaman otomatis
+                            # Panggil fungsi hapus yang baru
+                            sukses, pesan_error = hapus_pasien_total(pid_monitor)
+                            
+                            if sukses:
+                                # BERSIHKAN MEMORI DI TAB 1 JUGA (Penting!)
+                                if st.session_state.get("pasien_id_terpilih") == pid_monitor:
+                                    st.session_state.pasien_id_terpilih = None
+                                    st.session_state.sudah_dihitung = False
+                                
+                                st.success(f"Identitas {detail['nama']} dan seluruh riwayatnya BERHASIL DIMUSNAHKAN dari database!")
+                                st.rerun() # Refresh halaman otomatis
+                            else:
+                                st.error(f"Gagal menghapus pasien: {pesan_error}")
                             
                 elif pin_admin != "":
                     st.error("❌ PIN Salah! Akses ditolak.")
