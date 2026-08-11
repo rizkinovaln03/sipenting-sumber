@@ -322,19 +322,52 @@ def get_kurva_haz(jk):
     return df
 
 
-def tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur):
+def tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur, bb):
     if haz is None:
         return None, None
+        
     status = "Normal" if haz >= -2 else ("Severely Stunted" if haz < -3 else "Stunted")
+    
+    # Rumus Holliday-Segar untuk Estimasi Kebutuhan Kalori Dasar Anak
+    if bb <= 10:
+        kalori = bb * 100
+    elif bb <= 20:
+        kalori = 1000 + ((bb - 10) * 50)
+    else:
+        kalori = 1500 + ((bb - 20) * 20)
+        
+    teks_kalori = f"🍎 **Estimasi Kebutuhan Kalori:** ± {int(kalori)} kkal/hari (Metode Holliday-Segar)"
+    
     if red_flags_aktif or haz < -3:
-        tindak_lanjut = "RUJUKAN (MERAH): Red flags/severe stunting - rujuk Sp.A/FKTL segera."
+        tindak_lanjut = (
+            "RUJUKAN (MERAH): Red flags/severe stunting - Rujuk Sp.A/FKTL segera!\n\n"
+            f"{teks_kalori}\n\n"
+            "**Edukasi & Tata Laksana:**\n"
+            "- 🥩 **Gizi:** Wajib berikan Protein Hewani (telur, ikan, ayam, daging) di setiap porsi makan.\n"
+            "- 🩺 **Medis:** Skrining ketat penyakit penyerta (ISK, TBC, Anemia, infeksi parasit/saluran cerna).\n"
+            "- ⚠️ **Evaluasi:** Pastikan kepatuhan keluarga untuk rujukan Faltering Growth ke dokter spesialis."
+        )
     elif haz < -2:
         tgl_evaluasi = (tgl_ukur + relativedelta(days=14)).strftime('%d %B %Y')
-        tindak_lanjut = f"PMT PEMULIHAN (KUNING): status {status}, evaluasi ulang {tgl_evaluasi}."
+        tindak_lanjut = (
+            f"PMT PEMULIHAN (KUNING): Status {status}, evaluasi ulang {tgl_evaluasi}\n\n"
+            f"{teks_kalori}\n\n"
+            "**Edukasi & Tata Laksana:**\n"
+            "- 🥚 **Gizi:** Kejar tumbuh! Tingkatkan asupan Protein Hewani (Min. 1-2 butir telur/hari).\n"
+            "- 🥣 **PMT:** Berikan PMT Pemulihan sesuai standar Puskesmas, pastikan dikonsumsi habis oleh anak.\n"
+            "- ⏰ **Feeding Rules:** Jadwal makan teratur, maksimal 30 menit, tanpa distraksi (TV/HP/Gadget)."
+        )
     else:
-        tindak_lanjut = "PEMANTAUAN RUTIN (HIJAU): lanjut ASI/MPASI, kontrol bulan depan di Posyandu."
+        tindak_lanjut = (
+            "PEMANTAUAN RUTIN (HIJAU): Pertumbuhan Baik. Kontrol Posyandu bulan depan.\n\n"
+            f"{teks_kalori}\n\n"
+            "**Edukasi & Tata Laksana:**\n"
+            "- 🍲 **Gizi:** Lanjutkan MPASI menu lengkap (Karbohidrat, Protein Hewani, Lemak, sedikit Serat).\n"
+            "- 🤱 **ASI:** Lanjutkan pemberian ASI sesuai permintaan (jika anak usia < 24 bulan).\n"
+            "- 🏃 **Tumbuh Kembang:** Stimulasi perkembangan anak secara rutin dan jaga kebersihan sanitasi lingkungan."
+        )
+        
     return status, tindak_lanjut
-
 
 
 
@@ -420,7 +453,7 @@ with tab1:
         # Hitung usia dipindah ke luar form agar dieksekusi setelah tombol hitung ditekan
         selisih = relativedelta(tgl_ukur, tgl_lahir)
         usia_bulan = selisih.years * 12 + selisih.months + (selisih.days / 30.44)
-        st.info(f"Usia Presisi: {selisih.years} Tahun, {selisih.months} Bulan")
+        st.info(f"Usia Presisi: {selisih.years} Tahun, {selisih.months} Bulan, {selisih.days} Hari")
 
         # Logika hitung dijalankan hanya saat form disubmit
         if hitung_ditekan:
@@ -446,7 +479,7 @@ with tab1:
             if haz is None:
                 st.warning("HAZ tidak dapat dihitung untuk input ini. Periksa kembali data usia/tinggi badan.")
             else:
-                status_haz, tindak_lanjut = tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur)
+                status_haz, tindak_lanjut = tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur, bb)
                 nama_tampil = pasien_lama["nama"] if pasien_lama else nama_anak
 
                 st.success(f"✅ Analisis Gizi untuk **{nama_tampil}** ({jk}, usia {usia_bulan:.1f} bulan, {tgl_ukur.strftime('%d %B %Y')}).")
