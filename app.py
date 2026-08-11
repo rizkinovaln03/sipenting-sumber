@@ -384,44 +384,46 @@ with tab1:
             riwayat_lama = get_riwayat_pengukuran(pasien_lama["id"])
             st.success(f"📖 Pasien terdaftar: **{pasien_lama['nama']}** — {len(riwayat_lama)}x pengukuran"
                        + (f", terakhir {riwayat_lama[-1]['tanggal_ukur']}" if riwayat_lama else ""))
-            no_rm = st.text_input("No. RM", value=pasien_lama["no_rm"] or "", disabled=True)
-            nama_anak = st.text_input("Nama Anak", value=pasien_lama["nama"], disabled=True)
-            nama_ibu = st.text_input("Nama Ibu", value=pasien_lama["nama_ibu"] or "", disabled=True)
-            alamat = st.text_area("Alamat / RT RW", value=pasien_lama["alamat"] or "", disabled=True)
-            tgl_lahir_default = datetime.strptime(pasien_lama["tanggal_lahir"], "%Y-%m-%d").date()
-            jk = pasien_lama["jenis_kelamin"]
-            st.text_input("Jenis Kelamin", value=jk, disabled=True)
-        else:
-            no_rm = st.text_input("No. RM Puskesmas (opsional)")
-            nama_anak = st.text_input("Nama Anak")
-            nama_ibu = st.text_input("Nama Ibu")
-            alamat = st.text_area("Alamat / RT RW")
-            tgl_lahir_default = date(2023, 1, 1)
-            jk = None
 
-        st.markdown("---")
-        tgl_ukur = st.date_input("Tanggal Pengukuran", value=datetime.today())
-        tgl_lahir = st.date_input("Tanggal Lahir", value=tgl_lahir_default,
-                                   min_value=datetime(2020, 1, 1), max_value=datetime.today(),
-                                   disabled=bool(pasien_lama))
+        # ===== BUNGKUS DENGAN st.form AGAR TIDAK BLINK/KEDAP-KEDIP =====
+        with st.form("form_skrining"):
+            if pasien_lama:
+                no_rm = st.text_input("No. RM", value=pasien_lama["no_rm"] or "", disabled=True)
+                nama_anak = st.text_input("Nama Anak", value=pasien_lama["nama"], disabled=True)
+                nama_ibu = st.text_input("Nama Ibu", value=pasien_lama["nama_ibu"] or "", disabled=True)
+                alamat = st.text_area("Alamat / RT RW", value=pasien_lama["alamat"] or "", disabled=True)
+                tgl_lahir_default = datetime.strptime(pasien_lama["tanggal_lahir"], "%Y-%m-%d").date()
+                jk = pasien_lama["jenis_kelamin"]
+                st.text_input("Jenis Kelamin", value=jk, disabled=True)
+            else:
+                no_rm = st.text_input("No. RM Puskesmas (opsional)")
+                nama_anak = st.text_input("Nama Anak")
+                nama_ibu = st.text_input("Nama Ibu")
+                alamat = st.text_area("Alamat / RT RW")
+                tgl_lahir_default = date(2023, 1, 1)
+                jk = st.selectbox("Jenis Kelamin", ["Laki-laki", "Perempuan"])
 
+            st.markdown("---")
+            tgl_ukur = st.date_input("Tanggal Pengukuran", value=datetime.today())
+            tgl_lahir = st.date_input("Tanggal Lahir", value=tgl_lahir_default,
+                                       min_value=datetime(2020, 1, 1), max_value=datetime.today(),
+                                       disabled=bool(pasien_lama))
+
+            bb = st.number_input("Berat Badan (kg)", min_value=1.0, step=0.1)
+            tb = st.number_input("Tinggi/Panjang Badan (cm)", min_value=30.0, step=0.1)
+            red_flags_aktif = st.checkbox("🚨 Tanda Bahaya (Kelainan Bawaan / BB stagnan)")
+            catatan_kunjungan = st.text_area("Catatan kunjungan (opsional)")
+            
+            # Tombol diubah menjadi form_submit_button
+            hitung_ditekan = st.form_submit_button("🧮 Hitung & Analisis Gizi", type="primary", use_container_width=True)
+
+        # Hitung usia dipindah ke luar form agar dieksekusi setelah tombol hitung ditekan
         selisih = relativedelta(tgl_ukur, tgl_lahir)
         usia_bulan = selisih.years * 12 + selisih.months + (selisih.days / 30.44)
         st.info(f"Usia Presisi: {selisih.years} Tahun, {selisih.months} Bulan")
-        
-        if usia_bulan > 60:
-            st.warning("⚠️ Standar WHO pada aplikasi ini hanya mencakup usia 0-60 bulan.")
 
-        if not pasien_lama:
-            jk = st.selectbox("Jenis Kelamin", ["Laki-laki", "Perempuan"])
-
-        bb = st.number_input("Berat Badan (kg)", min_value=1.0, step=0.1)
-        tb = st.number_input("Tinggi/Panjang Badan (cm)", min_value=30.0, step=0.1)
-        red_flags_aktif = st.checkbox("🚨 Tanda Bahaya (Kelainan Bawaan / BB stagnan)")
-        catatan_kunjungan = st.text_area("Catatan kunjungan (opsional)")
-
-        # Tombol dibikin penuhi lebar kolom
-        if st.button("🧮 Hitung & Analisis Gizi", type="primary", use_container_width=True):
+        # Logika hitung dijalankan hanya saat form disubmit
+        if hitung_ditekan:
             if not pasien_lama and (nama_anak == "" or nama_ibu == ""):
                 st.error("⚠️ Nama Anak dan Ibu wajib diisi!")
             elif usia_bulan > 60 or usia_bulan < 0:
