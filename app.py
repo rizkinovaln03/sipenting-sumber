@@ -322,54 +322,91 @@ def get_kurva_haz(jk):
     return df
 
 
-def tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur, bb):
+def tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur, bb, usia_bulan):
     if haz is None:
         return None, None
         
     status = "Normal" if haz >= -2 else ("Severely Stunted" if haz < -3 else "Stunted")
     
-    # Rumus Holliday-Segar untuk Estimasi Kebutuhan Kalori Dasar Anak
-    if bb <= 10:
-        kalori = bb * 100
-    elif bb <= 20:
-        kalori = 1000 + ((bb - 10) * 50)
+    # 1. PERHITUNGAN BB IDEAL & KALORI (Metode RDA x BB Ideal)
+    # Rumus estimasi BB Ideal praktis berdasarkan usia
+    usia_tahun = usia_bulan / 12
+    if usia_bulan < 12:
+        bb_ideal = (usia_bulan + 9) / 2
+        rda = 110 # kkal/kgBB/hari (rata-rata bayi)
+    elif usia_bulan <= 36:
+        bb_ideal = (2 * usia_tahun) + 8
+        rda = 100 # kkal/kgBB/hari
     else:
-        kalori = 1500 + ((bb - 20) * 20)
-        
-    teks_kalori = f"🍎 **Estimasi Kebutuhan Kalori:** ± {int(kalori)} kkal/hari (Metode Holliday-Segar)"
-    
+        bb_ideal = (2 * usia_tahun) + 8
+        rda = 90  # kkal/kgBB/hari
+
+    kalori = rda * bb_ideal
+    teks_kalori = f"🍎 **Kebutuhan Kalori:** ± {int(kalori)} kkal/hari *(Berdasarkan RDA {rda} kkal x BB Ideal {bb_ideal:.1f} kg)*"
+
+    # 2. EDUKASI NUTRISI BERDASARKAN USIA
+    if usia_bulan < 6:
+        teks_usia = (
+            "- 🍼 **Nutrisi (0-6 Bulan):** ASI Eksklusif sesuka bayi (*on demand*). Tanpa tambahan air/makanan. "
+            "Jika ada indikasi medis (alergi/prematur/ASI tidak keluar), gunakan susu formula sesuai resep dokter (mis: formula standar, BBLR, atau hidrolisat ekstensif)."
+        )
+    elif usia_bulan < 12:
+        teks_usia = (
+            "- 🥣 **Nutrisi (6-12 Bulan):** Mulai MPASI! Tekstur saring (puree) berlanjut ke lumat (mashed) lalu cincang (minced). "
+            "Porsi bertahap dari 2-3 sdm hingga ½ mangkok (125ml) tiap makan. Lanjutkan ASI sesuka bayi."
+        )
+    elif usia_bulan < 24:
+        teks_usia = (
+            "- 🍲 **Nutrisi (1-2 Tahun):** Kenalkan Makanan Keluarga. Porsi ¾ mangkok (200ml). "
+            "Lanjutkan ASI hingga 2 tahun. Susu sapi (UHT Full Cream/Pasteurisasi) boleh diberikan maksimal 500ml/hari agar anak tidak kenyang susu dan menolak makan."
+        )
+    else:
+        teks_usia = (
+            "- 🍛 **Nutrisi (> 2 Tahun):** Makanan Keluarga porsi utuh. Saatnya sapih ASI. "
+            "Susu (UHT/Pertumbuhan) maksimal 2 gelas/hari hanya sebagai pelengkap, BUKAN pengganti makan utama."
+        )
+
+    # 3. FEEDING RULES IDAI (Diberikan untuk usia > 6 bulan)
+    teks_feeding_rules = ""
+    if usia_bulan >= 6:
+        teks_feeding_rules = (
+            "- ⏰ **Feeding Rules (IDAI):** Jadwal utama 3x, selingan 2x. Maksimal 30 menit/sesi. "
+            "Hanya air putih di antara jadwal. Lingkungan netral, **TANPA paksaan & TANPA distraksi (HP/TV/Mainan)**."
+        )
+
+    # 4. PENYUSUNAN TEKS TINDAK LANJUT
     if red_flags_aktif or haz < -3:
         tindak_lanjut = (
             "RUJUKAN (MERAH): Red flags/severe stunting - Rujuk Sp.A/FKTL segera!\n\n"
             f"{teks_kalori}\n\n"
-            "**Edukasi & Tata Laksana:**\n"
-            "- 🥩 **Gizi:** Wajib berikan Protein Hewani (telur, ikan, ayam, daging) di setiap porsi makan.\n"
-            "- 🩺 **Medis:** Skrining ketat penyakit penyerta (ISK, TBC, Anemia, infeksi parasit/saluran cerna).\n"
-            "- ⚠️ **Evaluasi:** Pastikan kepatuhan keluarga untuk rujukan Faltering Growth ke dokter spesialis."
+            "**Edukasi & Tata Laksana Klinis:**\n"
+            f"{teks_usia}\n"
+            "- 🥩 **Gizi:** Wajib Protein Hewani (telur, ayam, hati, ikan) setiap porsi makan!\n"
+            f"{teks_feeding_rules}\n"
+            "- 🩺 **Medis:** Skrining ketat *underlying disease* (ISK, TB Paru, Anemia, dll)."
         )
     elif haz < -2:
         tgl_evaluasi = (tgl_ukur + relativedelta(days=14)).strftime('%d %B %Y')
         tindak_lanjut = (
             f"PMT PEMULIHAN (KUNING): Status {status}, evaluasi ulang {tgl_evaluasi}\n\n"
             f"{teks_kalori}\n\n"
-            "**Edukasi & Tata Laksana:**\n"
-            "- 🥚 **Gizi:** Kejar tumbuh! Tingkatkan asupan Protein Hewani (Min. 1-2 butir telur/hari).\n"
-            "- 🥣 **PMT:** Berikan PMT Pemulihan sesuai standar Puskesmas, pastikan dikonsumsi habis oleh anak.\n"
-            "- ⏰ **Feeding Rules:** Jadwal makan teratur, maksimal 30 menit, tanpa distraksi (TV/HP/Gadget)."
+            "**Edukasi & Tata Laksana Klinis:**\n"
+            f"{teks_usia}\n"
+            "- 🥚 **Gizi:** Kejar tumbuh! Berikan PMT Puskesmas + ekstra Protein Hewani (1-2 telur/hari).\n"
+            f"{teks_feeding_rules}\n"
         )
     else:
         tindak_lanjut = (
             "PEMANTAUAN RUTIN (HIJAU): Pertumbuhan Baik. Kontrol Posyandu bulan depan.\n\n"
             f"{teks_kalori}\n\n"
-            "**Edukasi & Tata Laksana:**\n"
-            "- 🍲 **Gizi:** Lanjutkan MPASI menu lengkap (Karbohidrat, Protein Hewani, Lemak, sedikit Serat).\n"
-            "- 🤱 **ASI:** Lanjutkan pemberian ASI sesuai permintaan (jika anak usia < 24 bulan).\n"
-            "- 🏃 **Tumbuh Kembang:** Stimulasi perkembangan anak secara rutin dan jaga kebersihan sanitasi lingkungan."
+            "**Edukasi & Tata Laksana Klinis:**\n"
+            f"{teks_usia}\n"
+            "- 🥩 **Gizi:** Lanjutkan MPASI menu lengkap gizi seimbang.\n"
+            f"{teks_feeding_rules}\n"
+            "- 🏃 **Tumbuh Kembang:** Stimulasi perkembangan secara rutin."
         )
         
     return status, tindak_lanjut
-
-
 
 # --- 5. SISTEM TABS MULTI-HALAMAN ---
 tab1, tab2, tab3 = st.tabs(["🧮 Skrining & Kurva", "📖 Buku KIA & Monitoring", "⚖️ Referensi Klinis"])
@@ -479,7 +516,7 @@ with tab1:
             if haz is None:
                 st.warning("HAZ tidak dapat dihitung untuk input ini. Periksa kembali data usia/tinggi badan.")
             else:
-                status_haz, tindak_lanjut = tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur, bb)
+                status_haz, tindak_lanjut = tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur, bb, usia_bulan)
                 nama_tampil = pasien_lama["nama"] if pasien_lama else nama_anak
 
                 st.success(f"✅ Analisis Gizi untuk **{nama_tampil}** ({jk}, usia {usia_bulan:.1f} bulan, {tgl_ukur.strftime('%d %B %Y')}).")
