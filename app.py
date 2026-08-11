@@ -329,11 +329,10 @@ def tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur, bb, usia_b
     status = "Normal" if haz >= -2 else ("Severely Stunted" if haz < -3 else "Stunted")
     
     # 1. PERHITUNGAN BB IDEAL & KALORI (Metode RDA x BB Ideal)
-    # Rumus estimasi BB Ideal praktis berdasarkan usia
     usia_tahun = usia_bulan / 12
     if usia_bulan < 12:
         bb_ideal = (usia_bulan + 9) / 2
-        rda = 110 # kkal/kgBB/hari (rata-rata bayi)
+        rda = 110 # kkal/kgBB/hari
     elif usia_bulan <= 36:
         bb_ideal = (2 * usia_tahun) + 8
         rda = 100 # kkal/kgBB/hari
@@ -350,6 +349,7 @@ def tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur, bb, usia_b
             "- 🍼 **Nutrisi (0-6 Bulan):** ASI Eksklusif sesuka bayi (*on demand*). Tanpa tambahan air/makanan. "
             "Jika ada indikasi medis (alergi/prematur/ASI tidak keluar), gunakan susu formula sesuai resep dokter (mis: formula standar, BBLR, atau hidrolisat ekstensif)."
         )
+        teks_feeding_rules = "" # Usia < 6 bulan belum butuh feeding rules
     elif usia_bulan < 12:
         teks_usia = (
             "- 🥣 **Nutrisi (6-12 Bulan):** Mulai MPASI! Tekstur saring (puree) berlanjut ke lumat (mashed) lalu cincang (minced). "
@@ -367,46 +367,48 @@ def tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur, bb, usia_b
         )
 
     # 3. FEEDING RULES IDAI (Diberikan untuk usia > 6 bulan)
-    teks_feeding_rules = ""
     if usia_bulan >= 6:
         teks_feeding_rules = (
             "- ⏰ **Feeding Rules (IDAI):** Jadwal utama 3x, selingan 2x. Maksimal 30 menit/sesi. "
-            "Hanya air putih di antara jadwal. Lingkungan netral, **TANPA paksaan & TANPA distraksi (HP/TV/Mainan)**."
+            "Hanya air putih di antara jadwal. Lingkungan netral, **TANPA paksaan & TANPA distraksi (HP/TV/Mainan)**.\n"
         )
 
-    # 4. PENYUSUNAN TEKS TINDAK LANJUT
+    # 4. PENYUSUNAN TEKS TINDAK LANJUT (Otomatis bedakan <6 bulan dan >=6 bulan)
     if red_flags_aktif or haz < -3:
+        gizi_tambahan = "- 🥩 **Gizi:** Wajib Protein Hewani setiap porsi MPASI!" if usia_bulan >= 6 else "- 🍼 **Laktasi:** Fokus perbaikan manajemen laktasi / evaluasi indikasi susu formula medis."
         tindak_lanjut = (
             "RUJUKAN (MERAH): Red flags/severe stunting - Rujuk Sp.A/FKTL segera!\n\n"
             f"{teks_kalori}\n\n"
             "**Edukasi & Tata Laksana Klinis:**\n"
             f"{teks_usia}\n"
-            "- 🥩 **Gizi:** Wajib Protein Hewani (telur, ayam, hati, ikan) setiap porsi makan!\n"
-            f"{teks_feeding_rules}\n"
+            f"{gizi_tambahan}\n"
+            f"{teks_feeding_rules}"
             "- 🩺 **Medis:** Skrining ketat *underlying disease* (ISK, TB Paru, Anemia, dll)."
         )
     elif haz < -2:
         tgl_evaluasi = (tgl_ukur + relativedelta(days=14)).strftime('%d %B %Y')
+        gizi_tambahan = "- 🥚 **Gizi:** Kejar tumbuh! Berikan PMT Puskesmas + ekstra Protein Hewani (1-2 telur/hari)." if usia_bulan >= 6 else "- 🍼 **Laktasi:** Pantau ketat kecukupan ASI atau evaluasi suplementasi gizi."
         tindak_lanjut = (
             f"PMT PEMULIHAN (KUNING): Status {status}, evaluasi ulang {tgl_evaluasi}\n\n"
             f"{teks_kalori}\n\n"
             "**Edukasi & Tata Laksana Klinis:**\n"
             f"{teks_usia}\n"
-            "- 🥚 **Gizi:** Kejar tumbuh! Berikan PMT Puskesmas + ekstra Protein Hewani (1-2 telur/hari).\n"
-            f"{teks_feeding_rules}\n"
+            f"{gizi_tambahan}\n"
+            f"{teks_feeding_rules}"
         )
     else:
+        gizi_tambahan = "- 🥩 **Gizi:** Lanjutkan MPASI menu lengkap gizi seimbang." if usia_bulan >= 6 else "- 🤱 **Laktasi:** Lanjutkan pemberian ASI Eksklusif dengan posisi perlekatan yang benar."
         tindak_lanjut = (
             "PEMANTAUAN RUTIN (HIJAU): Pertumbuhan Baik. Kontrol Posyandu bulan depan.\n\n"
             f"{teks_kalori}\n\n"
             "**Edukasi & Tata Laksana Klinis:**\n"
             f"{teks_usia}\n"
-            "- 🥩 **Gizi:** Lanjutkan MPASI menu lengkap gizi seimbang.\n"
-            f"{teks_feeding_rules}\n"
+            f"{gizi_tambahan}\n"
+            f"{teks_feeding_rules}"
             "- 🏃 **Tumbuh Kembang:** Stimulasi perkembangan secara rutin."
         )
         
-    return status, tindak_lanjut
+    return status, tindak_lanjut.strip()
 
 # --- 5. SISTEM TABS MULTI-HALAMAN ---
 tab1, tab2, tab3 = st.tabs(["🧮 Skrining & Kurva", "📖 Buku KIA & Monitoring", "⚖️ Referensi Klinis"])
