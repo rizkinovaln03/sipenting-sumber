@@ -15,16 +15,14 @@ from pygrowup import exceptions as pg_exceptions
 # --- 0. KONFIGURASI DATABASE (SQLite lokal, di folder yang sama dengan app.py) ---
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sipenting.db")
 
-
 def get_conn():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
-
 def init_db():
-    conn = get_db_connection()
+    conn = get_conn()
     c = conn.cursor()
     c.execute('''
         CREATE TABLE IF NOT EXISTS pasien (
@@ -81,13 +79,11 @@ def cari_pasien(keyword):
     conn.close()
     return rows
 
-
 def get_pasien(pasien_id):
     conn = get_conn()
     row = conn.execute("SELECT * FROM pasien WHERE id = ?", (pasien_id,)).fetchone()
     conn.close()
     return row
-
 
 def get_semua_pasien():
     conn = get_conn()
@@ -95,14 +91,12 @@ def get_semua_pasien():
     conn.close()
     return rows
 
-
 def simpan_pasien_baru(no_rm, nama, nama_ibu, alamat, tanggal_lahir, jenis_kelamin):
     conn = get_conn()
     cur = conn.execute(
-        """INSERT INTO pasien (no_rm, nama, nama_ibu, alamat, tanggal_lahir, jenis_kelamin, dibuat_pada)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (no_rm, nama, nama_ibu, alamat, tanggal_lahir.isoformat(), jenis_kelamin,
-         datetime.now().isoformat(timespec="seconds"))
+        """INSERT INTO pasien (no_rm, nama, nama_ibu, alamat, tanggal_lahir, jenis_kelamin)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (no_rm, nama, nama_ibu, alamat, tanggal_lahir.isoformat(), jenis_kelamin)
     )
     conn.commit()
     pasien_id = cur.lastrowid
@@ -110,7 +104,7 @@ def simpan_pasien_baru(no_rm, nama, nama_ibu, alamat, tanggal_lahir, jenis_kelam
     return pasien_id
 
 def simpan_pengukuran(pasien_id, tgl_ukur, usia_bulan, bb, tb, waz, haz, whz, status_gizi, red_flags, tindak_lanjut, catatan, skor_tb=0, is_gtm="Tidak"):
-    conn = get_db_connection()
+    conn = get_conn()
     c = conn.cursor()
     c.execute('''
         INSERT INTO pengukuran 
@@ -120,7 +114,6 @@ def simpan_pengukuran(pasien_id, tgl_ukur, usia_bulan, bb, tb, waz, haz, whz, st
     conn.commit()
     conn.close()
 
-
 def get_riwayat_pengukuran(pasien_id):
     conn = get_conn()
     rows = conn.execute(
@@ -129,7 +122,6 @@ def get_riwayat_pengukuran(pasien_id):
     ).fetchall()
     conn.close()
     return rows
-
 
 def get_ringkasan_status_gizi():
     """Distribusi status gizi berdasarkan PENGUKURAN TERAKHIR tiap pasien (bukan semua baris riwayat)."""
@@ -145,7 +137,6 @@ def get_ringkasan_status_gizi():
     conn.close()
     return {r["status_gizi"]: r["jumlah"] for r in rows}
 
-
 def get_semua_data_gabungan():
     """Semua pasien + seluruh riwayat pengukurannya, digabung (join) untuk keperluan export/rekap."""
     conn = get_conn()
@@ -154,15 +145,14 @@ def get_semua_data_gabungan():
             pa.no_rm, pa.nama AS nama_anak, pa.nama_ibu, pa.alamat,
             pa.tanggal_lahir, pa.jenis_kelamin,
             pe.tanggal_ukur, pe.usia_bulan, pe.bb, pe.tb,
-            pe.waz, pe.haz, pe.whz, pe.status_gizi, pe.red_flag,
-            pe.tindak_lanjut, pe.catatan
+            pe.waz, pe.haz, pe.whz, pe.status_gizi, pe.red_flags,
+            pe.tindak_lanjut, pe.catatan, pe.skor_tb, pe.is_gtm
         FROM pasien pa
         LEFT JOIN pengukuran pe ON pe.pasien_id = pa.id
         ORDER BY pa.nama, pe.tanggal_ukur
     """).fetchall()
     conn.close()
     return pd.DataFrame([dict(r) for r in rows])
-
 
 def buat_file_excel(df_pasien, df_gabungan, df_riwayat_pasien_terpilih=None, nama_pasien_terpilih=None):
     """Bikin file Excel di memori (BytesIO) dengan beberapa sheet, siap didownload user."""
@@ -182,7 +172,6 @@ def buat_file_excel(df_pasien, df_gabungan, df_riwayat_pasien_terpilih=None, nam
 
     buffer.seek(0)
     return buffer
-
 
 def get_tren_kunjungan_mingguan():
     """Jumlah pengukuran per minggu (ISO week) dari seluruh riwayat, untuk grafik tren."""
@@ -223,7 +212,7 @@ init_db()
 # --- 1. KONFIGURASI HALAMAN ---
 st.set_page_config(
     page_title="SIPENTING - Puskesmas Sumber", 
-    page_icon="sipenting.png",  # <--- GANTI JADI INI SAJA (Lebih stabil dari URL)
+    page_icon="sipenting.png",
     layout="wide"
 )
 
@@ -256,12 +245,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- 3. HEADER & LOGO ---
-# Membagi 3 kolom: [Logo Puskesmas Kiri] - [Teks di Tengah] - [Logo SiPENTING Kanan]
-# Jatah layarnya disesuaikan: 1.2 (Kiri), 5 (Tengah), dan 1.8 (Kanan)
 col_kiri, col_tengah, col_kanan = st.columns([1.2, 5, 1.8])
 
 with col_kiri:
-    # 1. LOGO PUSKESMAS (KIRI)
     st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
     st.markdown(
         '<img src="https://raw.githubusercontent.com/rizkinovaln03/sipenting-sumber/main/logo.png" style="width:100%; object-fit:contain;">',
@@ -269,13 +255,11 @@ with col_kiri:
     )
 
 with col_tengah:
-    # 2. TEKS JUDUL (TENGAH)
     st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
     st.markdown("<div class='main-title'>SIPENTING</div>", unsafe_allow_html=True)
     st.markdown("<div class='sub-title'>Sistem Pencegahan & Edukasi Stunting Terintegrasi | Puskesmas Sumber</div>", unsafe_allow_html=True)
 
 with col_kanan:
-    # 3. LOGO SIPENTING (KANAN)
     st.markdown(
         '<img src="https://raw.githubusercontent.com/rizkinovaln03/sipenting-sumber/main/sipenting.png" style="width:100%; object-fit:contain;">', 
         unsafe_allow_html=True
@@ -287,7 +271,6 @@ st.markdown("---")
 @st.cache_resource
 def get_calculator():
     return Calculator(adjust_height_data=False, adjust_weight_scores=False, include_cdc=False)
-
 
 def hitung_zscore(bb, tb, usia_bulan, jk):
     calc = get_calculator()
@@ -307,7 +290,6 @@ def hitung_zscore(bb, tb, usia_bulan, jk):
     haz = _safe_z("lhfa", tb)
     whz = _safe_z("wfl", bb, height=tb) if usia_bulan < 24 else _safe_z("wfh", bb, height=tb)
     return waz, haz, whz, errors
-
 
 @st.cache_data
 def get_kurva_haz(jk):
@@ -340,7 +322,6 @@ def get_kurva_waz(jk):
 @st.cache_data
 def get_kurva_whz(jk, usia_bulan):
     calc = get_calculator()
-    # WHO membedakan tabel grafik 0-24 bulan (Panjang) dan 24-60 bulan (Tinggi)
     is_length = usia_bulan < 24
     if is_length:
         table = calc.wfl_boys_0_2 if jk == "Laki-laki" else calc.wfl_girls_0_2
@@ -362,15 +343,11 @@ def get_kurva_whz(jk, usia_bulan):
     df = pd.DataFrame({"tinggi": tinggi, "median": median, "sd2neg": sd2neg, "sd3neg": sd3neg, "sd2pos": sd2pos, "sd3pos": sd3pos})
     return df.sort_values("tinggi"), is_length
 
-
 def tentukan_status_dan_tindak_lanjut(waz, haz, whz, red_flags_aktif, tgl_ukur, bb, usia_bulan, skor_tb, is_gtm):
-    # --- 1. TENTUKAN 3 STATUS KLINIS UI ---
     status_bb = "Normal" if waz is not None and waz >= -2 else ("Kurang" if waz and waz >= -3 else "Sangat Kurang")
     status_tb = "Normal" if haz is not None and haz >= -2 else ("Pendek" if haz and haz >= -3 else "Sangat Pendek")
     status_gizi = "Gizi Baik" if whz is not None and -2 <= whz <= 1 else ("Gizi Kurang" if whz and -3 <= whz < -2 else "Gizi Buruk/Lebih")
-    # (Bisa disesuaikan dengan teks aslimu sebelumnya untuk bagian 3 status klinis ini)
 
-    # --- 2. LOGIKA EDUKASI NUTRISI (Asli milikmu) ---
     if haz is None: return None, None, None, None
     status = "Normal" if haz >= -2 else ("Severely Stunted" if haz < -3 else "Stunted")
     
@@ -395,7 +372,6 @@ def tentukan_status_dan_tindak_lanjut(waz, haz, whz, red_flags_aktif, tgl_ukur, 
         teks_usia = "- 🍛 **Nutrisi (> 2 Tahun):** Makanan Keluarga porsi utuh. Saatnya sapih ASI."
         teks_feeding_rules = "- ⏰ **Feeding Rules (IDAI):** Jadwal utama 3x, selingan 2x. Maks 30 menit/sesi. TANPA distraksi (HP/TV).\n"
 
-    # --- 3. INJEKSI SKORING TB & GTM ---
     teks_tb = ""
     if skor_tb >= 6:
         teks_tb = f"\n- 🦠 **PERINGATAN TB (Skor = {skor_tb}):** Diagnosis Klinis TB (Skor ≥ 6). WAJIB RUJUK ke poli anak / DOTS Puskesmas untuk OAT!"
@@ -406,7 +382,6 @@ def tentukan_status_dan_tindak_lanjut(waz, haz, whz, red_flags_aktif, tgl_ukur, 
     if is_gtm == "Ya":
         teks_gtm = "\n- 🚫 **TATA LAKSANA GTM:** Lakukan evaluasi *Red Flags* (sariawan, infeksi). Terapkan *Feeding Rules* sangat ketat! Jangan paksa anak makan (*force feeding*)."
 
-    # --- 4. PENYUSUNAN TEKS AKHIR ---
     if red_flags_aktif or haz < -3 or skor_tb >= 6:
         gizi_tambahan = "- 🥩 **Gizi:** Wajib Protein Hewani setiap porsi MPASI!" if usia_bulan >= 6 else "- 🍼 **Laktasi:** Fokus perbaikan manajemen laktasi."
         tindak_lanjut = f"RUJUKAN (MERAH): Red flags / Severely Stunted / Suspek TB!\n\n{teks_kalori}\n\n**Edukasi & Tata Laksana Klinis:**\n{teks_usia}\n{gizi_tambahan}\n{teks_feeding_rules}{teks_tb}{teks_gtm}\n- 🩺 **Medis:** Skrining ketat penyakit penyerta."
@@ -432,8 +407,6 @@ with tab1:
     if "sudah_dihitung" not in st.session_state:
         st.session_state.sudah_dihitung = False
 
-    # KITA BAGI JADI 2 KOLOM (Kiri: Form Input, Kanan: Hasil & Kurva)
-    # Di layar HP, Streamlit otomatis mengubahnya jadi atas-bawah (Sangat ramah HP!)
     col_form, col_hasil = st.columns([1.2, 2.5])
 
     with col_form:
@@ -447,7 +420,7 @@ with tab1:
             if st.button("✅ Gunakan Data Pasien Ini"):
                 st.session_state.pasien_id_terpilih = opsi[pilihan]
                 st.session_state.sudah_dihitung = False
-                st.rerun() # Refresh agar state langsung terupdate
+                st.rerun()
         elif kata_kunci:
             st.info("Tidak ditemukan. Akan didaftarkan sebagai pasien baru di bawah.")
 
@@ -467,7 +440,6 @@ with tab1:
             st.success(f"📖 Pasien terdaftar: **{pasien_lama['nama']}** — {len(riwayat_lama)}x pengukuran"
                        + (f", terakhir {riwayat_lama[-1]['tanggal_ukur']}" if riwayat_lama else ""))
 
-        # ===== BUNGKUS DENGAN st.form AGAR TIDAK BLINK/KEDAP-KEDIP =====
         with st.form("form_skrining"):
             if pasien_lama:
                 no_rm = st.text_input("No. RM", value=pasien_lama["no_rm"] or "", disabled=True)
@@ -487,9 +459,7 @@ with tab1:
 
             st.markdown("---")
             tgl_ukur = st.date_input("Tanggal Pengukuran", value=datetime.today())
-            tgl_lahir = st.date_input("Tanggal Lahir", value=tgl_lahir_default,
-                                       min_value=datetime(2020, 1, 1), max_value=datetime.today(),
-                                       disabled=bool(pasien_lama))
+            tgl_lahir = st.date_input("Tanggal Lahir", value=tgl_lahir_default, min_value=datetime(2020, 1, 1), max_value=datetime.today(), disabled=bool(pasien_lama))
 
             bb = st.number_input("Berat Badan (kg)", min_value=1.0, step=0.1)
             tb = st.number_input("Tinggi/Panjang Badan (cm)", min_value=30.0, step=0.1)
@@ -499,10 +469,8 @@ with tab1:
             st.markdown("---")
             st.markdown("**🩺 Skrining Klinis Tambahan (Opsional)**")
             
-            # Checkbox GTM
             gtm_aktif = st.checkbox("❓ Anak mengalami GTM / Kesulitan Makan?")
             
-            # Menu Lipat Skoring TB
             with st.expander("🦠 Form Skoring TB IDAI (Buka jika ada indikasi)"):
                 st.info("Catatan: Skor ≥ 6 (dengan max 1 skor/parameter) mengindikasikan diagnosis klinis TB.")
                 tb_1 = st.selectbox("1. Kontak dengan pasien TB Paru", ["Tidak Jelas (0)", "Laporan Keluarga / BTA tidak diketahui (2)", "BTA Positif (3)"])
@@ -514,17 +482,13 @@ with tab1:
                 tb_7 = st.selectbox("7. Pembengkakan tulang/sendi", ["Tidak (0)", "Ya (1)"])
                 tb_8 = st.selectbox("8. Foto rontgen toraks", ["Normal / Tidak Diperiksa (0)", "Kesan TB (1)"])
             
-            # Tombol diubah menjadi form_submit_button
             hitung_ditekan = st.form_submit_button("🧮 Hitung & Analisis Gizi", type="primary", use_container_width=True)
 
-        # Hitung usia dipindah ke luar form agar dieksekusi setelah tombol hitung ditekan
         selisih = relativedelta(tgl_ukur, tgl_lahir)
         usia_bulan = selisih.years * 12 + selisih.months + (selisih.days / 30.44)
         st.info(f"Usia Presisi: {selisih.years} Tahun, {selisih.months} Bulan, {selisih.days} Hari")
 
-        # Logika hitung dijalankan hanya saat form disubmit
         if hitung_ditekan:
-            # Ekstraksi angka skor TB dari teks di dalam kurung
             skor_tb_total = (
                 int(tb_1.split("(")[1].split(")")[0]) + int(tb_2.split("(")[1].split(")")[0]) +
                 int(tb_3.split("(")[1].split(")")[0]) + int(tb_4.split("(")[1].split(")")[0]) +
@@ -534,8 +498,6 @@ with tab1:
             st.session_state.skor_tb_input = skor_tb_total
             st.session_state.is_gtm_input = "Ya" if gtm_aktif else "Tidak"
             
-            if not pasien_lama and (nama_anak == "" or nama_ibu == ""):
-                # (Sisa kodenya sama seperti aslimu...)
             if not pasien_lama and (nama_anak == "" or nama_ibu == ""):
                 st.error("⚠️ Nama Anak dan Ibu wajib diisi!")
             elif usia_bulan > 60 or usia_bulan < 0:
@@ -558,15 +520,14 @@ with tab1:
             if haz is None or whz is None or waz is None:
                 st.warning("Data tidak lengkap untuk dihitung. Periksa kembali usia/berat/tinggi badan.")
             else:
-                # Ubah pemanggilannya dengan memasukkan skor_tb dan is_gtm
-                status_bb, status_tb, status_gizi, tindak_lanjut = tentukan_status_dan_tindak_lanjut(waz, haz, whz, red_flags_aktif, tgl_ukur, bb, usia_bulan,
-                st.session_state.skor_tb_input, st.session_state.is_gtm_input
-                                                                                                    )
+                status_bb, status_tb, status_gizi, tindak_lanjut = tentukan_status_dan_tindak_lanjut(
+                    waz, haz, whz, red_flags_aktif, tgl_ukur, bb, usia_bulan,
+                    st.session_state.skor_tb_input, st.session_state.is_gtm_input
+                )
                 nama_tampil = pasien_lama["nama"] if pasien_lama else nama_anak
 
                 st.success(f"✅ Analisis Gizi Kemenkes untuk **{nama_tampil}** ({jk}, usia {usia_bulan:.1f} bulan).")
 
-                # TAMPILKAN 3 METRIK DIAGNOSA UTAMA
                 col_res1, col_res2, col_res3 = st.columns(3)
                 col_res1.metric("Berat/Umur (BB/U)", f"{waz} SD", status_bb, delta_color="off" if (waz < -2) else "normal")
                 col_res2.metric("Tinggi/Umur (TB/U)", f"{haz} SD", status_tb, delta_color="off" if (haz < -2) else "normal")
@@ -575,7 +536,6 @@ with tab1:
                 st.markdown("---")
                 st.subheader("📈 Kurva Pertumbuhan Anak (WHO)")
                 
-                # TAMPILKAN 3 GRAFIK DALAM BENTUK TAB
                 tab_kurva_bb, tab_kurva_tb, tab_kurva_gizi = st.tabs(["📉 BB/Umur", "📉 TB/Umur", "📉 BB/Tinggi (Gizi)"])
                 
                 with tab_kurva_tb:
@@ -619,7 +579,6 @@ with tab1:
                     
                     if pasien_lama:
                         riw = get_riwayat_pengukuran(pasien_lama["id"])
-                        # Hanya ambil riwayat yang kategorinya sama (Panjang vs Tinggi) agar kurvanya presisi
                         if riw: 
                             x_riw = [r["tb"] for r in riw if (r["usia_bulan"] < 24) == is_length]
                             y_riw = [r["bb"] for r in riw if (r["usia_bulan"] < 24) == is_length]
@@ -643,16 +602,17 @@ with tab1:
                     else:
                         pasien_id = simpan_pasien_baru(no_rm or None, nama_anak, nama_ibu, alamat, tgl_lahir, jk)
                     
-                    # Simpan ketiga status ke database (dipisahkan koma)
                     status_gabungan = f"BB/U: {status_bb} | TB/U: {status_tb} | BB/TB: {status_gizi}"
-                    # Ubah pemanggilan simpan_pengukuran
-                    simpan_pengukuran(pasien_id, tgl_ukur, usia_bulan, bb, tb, waz, haz, whz,
-                    status_gabungan, red_flags_aktif, tindak_lanjut, catatan_kunjungan, 
-                    st.session_state.skor_tb_input, st.session_state.is_gtm_input)
+                    
+                    simpan_pengukuran(
+                        pasien_id, tgl_ukur, usia_bulan, bb, tb, waz, haz, whz,
+                        status_gabungan, red_flags_aktif, tindak_lanjut, catatan_kunjungan, 
+                        st.session_state.skor_tb_input, st.session_state.is_gtm_input
+                    )
                     st.success("🎉 Data disimpan ke rekam pasien! Cek riwayatnya di tab Buku KIA.")
                     st.session_state.sudah_dihitung = False
                     st.session_state.pasien_id_terpilih = pasien_id
-                    st.rerun() # Refresh instan
+                    st.rerun()
         else:
             st.info("👈 Silakan isi form pendaftaran/pengukuran di sebelah kiri, lalu klik 'Hitung & Analisis Gizi' untuk menampilkan hasil Z-Score.")
             
@@ -688,7 +648,7 @@ with tab2:
                 "BB (kg)": r["bb"], "TB (cm)": r["tb"],
                 "WAZ": r["waz"], "HAZ": r["haz"], "WHZ": r["whz"],
                 "Status Gizi": r["status_gizi"],
-                "Red Flag": "🚨" if r["red_flag"] else "-",
+                "Red Flag": "🚨" if r["red_flags"] else "-",
                 "Tindak Lanjut": r["tindak_lanjut"],
                 "Catatan": r["catatan"] or "-"
             } for r in riwayat])
@@ -696,7 +656,6 @@ with tab2:
             st.dataframe(df_riwayat, use_container_width=True, hide_index=True)
 
             st.markdown("**📈 Tren Pertumbuhan Z-Score (Riwayat Kunjungan)**")
-            # Membagi grafik tren menjadi 3 Tab
             tab_tren_bb, tab_tren_tb, tab_tren_gizi = st.tabs(["📉 Tren BB/Umur (WAZ)", "📉 Tren TB/Umur (HAZ)", "📉 Tren Gizi (WHZ)"])
             
             with tab_tren_bb:
@@ -741,20 +700,17 @@ with tab2:
                 file_name=f"riwayat_{detail['nama'].replace(' ', '_')}_{date.today().isoformat()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-    # --- MULAI DARI SINI: PANEL MANAJEMEN DATA (ADMIN) ---
+            
             st.markdown("---")
             st.markdown("### ⚙️ Manajemen & Koreksi Data (Khusus Admin)")
             with st.expander("Buka Panel Koreksi Data (Butuh PIN)"):
                 pin_admin = st.text_input("Masukkan PIN Admin Puskesmas:", type="password")
                 
-                # Ganti "sumber123" dengan PIN rahasiamu
                 if pin_admin == "sumber123":
                     st.success("Akses Terbuka. Gunakan dengan hati-hati!")
                     
-                    # FITUR 1: HAPUS 1 BARIS PENGUKURAN
                     if riwayat:
                         st.markdown("**1. Hapus Kunjungan/Pengukuran Tertentu** (Jika salah ketik BB/TB)")
-                        # Buat opsi dropdown berdasarkan riwayat yang ada
                         opsi_hapus = {f"Tgl: {r['tanggal_ukur']} | BB: {r['bb']} kg | TB: {r['tb']} cm": r["id"] for r in riwayat}
                         pilih_hapus = st.selectbox("Pilih data kunjungan yang salah:", list(opsi_hapus.keys()))
                         id_pengukuran_salah = opsi_hapus[pilih_hapus]
@@ -762,34 +718,30 @@ with tab2:
                         if st.button("🗑️ Hapus Pengukuran Ini"):
                             hapus_pengukuran(id_pengukuran_salah)
                             st.success("Satu baris data pengukuran berhasil dihapus!")
-                            st.rerun() # Refresh halaman otomatis
+                            st.rerun() 
                     
                     st.markdown("---")
                     
-                    # FITUR 2: HAPUS TOTAL PASIEN
                     st.markdown("**2. Hapus SELURUH Data Pasien Ini**")
                     st.warning("⚠️ Peringatan: Aksi ini akan menghapus permanen identitas pasien dan seluruh riwayat Buku KIA-nya!")
                     konfirmasi_hapus = st.checkbox(f"Saya yakin ingin menghapus permanen data {detail['nama']}")
                     
                     if konfirmasi_hapus:
                         if st.button("🚨 Hapus Permanen Pasien", type="primary"):
-                            # Panggil fungsi hapus yang baru
                             sukses, pesan_error = hapus_pasien_total(pid_monitor)
                             
                             if sukses:
-                                # BERSIHKAN MEMORI DI TAB 1 JUGA (Penting!)
                                 if st.session_state.get("pasien_id_terpilih") == pid_monitor:
                                     st.session_state.pasien_id_terpilih = None
                                     st.session_state.sudah_dihitung = False
                                 
                                 st.success(f"Identitas {detail['nama']} dan seluruh riwayatnya BERHASIL DIMUSNAHKAN dari database!")
-                                st.rerun() # Refresh halaman otomatis
+                                st.rerun() 
                             else:
                                 st.error(f"Gagal menghapus pasien: {pesan_error}")
                             
                 elif pin_admin != "":
                     st.error("❌ PIN Salah! Akses ditolak.")
-            # --- BATAS AKHIR PANEL MANAJEMEN DATA ---
 
     st.markdown("---")
     st.subheader("💾 Export Database Lengkap")
