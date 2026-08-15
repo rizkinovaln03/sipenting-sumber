@@ -47,7 +47,7 @@ def init_db():
             haz REAL,
             whz REAL,
             status_gizi TEXT,
-            red_flags INTEGER,
+            red_flag INTEGER,
             tindak_lanjut TEXT,
             catatan TEXT,
             skor_tb INTEGER DEFAULT 0,
@@ -55,7 +55,7 @@ def init_db():
         )
     ''')
     
-    # KODE SAKTI AUTO-MIGRASI (Menambah kolom baru jika belum ada tanpa hapus data lama)
+    # KODE SAKTI AUTO-MIGRASI 
     c.execute("PRAGMA table_info(pengukuran)")
     columns = [col[1] for col in c.fetchall()]
     if 'skor_tb' not in columns:
@@ -67,7 +67,6 @@ def init_db():
     conn.close()
 
 def cari_pasien(keyword):
-    """Cari pasien berdasarkan No. RM atau Nama (untuk cek 'sudah pernah diinput apa belum')."""
     if not keyword or keyword.strip() == "":
         return []
     conn = get_conn()
@@ -103,14 +102,14 @@ def simpan_pasien_baru(no_rm, nama, nama_ibu, alamat, tanggal_lahir, jenis_kelam
     conn.close()
     return pasien_id
 
-def simpan_pengukuran(pasien_id, tgl_ukur, usia_bulan, bb, tb, waz, haz, whz, status_gizi, red_flags, tindak_lanjut, catatan, skor_tb=0, is_gtm="Tidak"):
+def simpan_pengukuran(pasien_id, tgl_ukur, usia_bulan, bb, tb, waz, haz, whz, status_gizi, red_flag, tindak_lanjut, catatan, skor_tb=0, is_gtm="Tidak"):
     conn = get_conn()
     c = conn.cursor()
     c.execute('''
         INSERT INTO pengukuran 
-        (pasien_id, tanggal_ukur, usia_bulan, bb, tb, waz, haz, whz, status_gizi, red_flags, tindak_lanjut, catatan, skor_tb, is_gtm)
+        (pasien_id, tanggal_ukur, usia_bulan, bb, tb, waz, haz, whz, status_gizi, red_flag, tindak_lanjut, catatan, skor_tb, is_gtm)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (pasien_id, tgl_ukur, usia_bulan, bb, tb, waz, haz, whz, status_gizi, int(red_flags), tindak_lanjut, catatan, skor_tb, is_gtm))
+    ''', (pasien_id, tgl_ukur, usia_bulan, bb, tb, waz, haz, whz, status_gizi, int(red_flag), tindak_lanjut, catatan, skor_tb, is_gtm))
     conn.commit()
     conn.close()
 
@@ -124,7 +123,6 @@ def get_riwayat_pengukuran(pasien_id):
     return rows
 
 def get_ringkasan_status_gizi():
-    """Distribusi status gizi berdasarkan PENGUKURAN TERAKHIR tiap pasien (bukan semua baris riwayat)."""
     conn = get_conn()
     rows = conn.execute("""
         SELECT p.status_gizi, COUNT(*) as jumlah FROM pengukuran p
@@ -138,14 +136,13 @@ def get_ringkasan_status_gizi():
     return {r["status_gizi"]: r["jumlah"] for r in rows}
 
 def get_semua_data_gabungan():
-    """Semua pasien + seluruh riwayat pengukurannya, digabung (join) untuk keperluan export/rekap."""
     conn = get_conn()
     rows = conn.execute("""
         SELECT
             pa.no_rm, pa.nama AS nama_anak, pa.nama_ibu, pa.alamat,
             pa.tanggal_lahir, pa.jenis_kelamin,
             pe.tanggal_ukur, pe.usia_bulan, pe.bb, pe.tb,
-            pe.waz, pe.haz, pe.whz, pe.status_gizi, pe.red_flags,
+            pe.waz, pe.haz, pe.whz, pe.status_gizi, pe.red_flag,
             pe.tindak_lanjut, pe.catatan, pe.skor_tb, pe.is_gtm
         FROM pasien pa
         LEFT JOIN pengukuran pe ON pe.pasien_id = pa.id
@@ -155,16 +152,14 @@ def get_semua_data_gabungan():
     return pd.DataFrame([dict(r) for r in rows])
 
 def buat_file_excel(df_pasien, df_gabungan, df_riwayat_pasien_terpilih=None, nama_pasien_terpilih=None):
-    """Bikin file Excel di memori (BytesIO) dengan beberapa sheet, siap didownload user."""
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df_pasien.to_excel(writer, sheet_name="Daftar Pasien", index=False)
         df_gabungan.to_excel(writer, sheet_name="Rekap Semua Pengukuran", index=False)
         if df_riwayat_pasien_terpilih is not None and not df_riwayat_pasien_terpilih.empty:
-            sheet_name = f"Riwayat - {nama_pasien_terpilih}"[:31]  # batas nama sheet Excel = 31 karakter
+            sheet_name = f"Riwayat - {nama_pasien_terpilih}"[:31] 
             df_riwayat_pasien_terpilih.to_excel(writer, sheet_name=sheet_name, index=False)
 
-        # Rapikan lebar kolom biar gak mepet
         for sheet in writer.sheets.values():
             for col_cells in sheet.columns:
                 panjang_maks = max((len(str(c.value)) for c in col_cells if c.value is not None), default=10)
@@ -174,7 +169,6 @@ def buat_file_excel(df_pasien, df_gabungan, df_riwayat_pasien_terpilih=None, nam
     return buffer
 
 def get_tren_kunjungan_mingguan():
-    """Jumlah pengukuran per minggu (ISO week) dari seluruh riwayat, untuk grafik tren."""
     conn = get_conn()
     rows = conn.execute("SELECT tanggal_ukur FROM pengukuran ORDER BY tanggal_ukur").fetchall()
     conn.close()
@@ -184,22 +178,18 @@ def get_tren_kunjungan_mingguan():
     df["tanggal_ukur"] = pd.to_datetime(df["tanggal_ukur"])
     df["minggu"] = df["tanggal_ukur"].dt.strftime("%Y-W%U")
     agg = df.groupby("minggu").size().reset_index(name="jumlah")
-    return agg.tail(8)  # 8 minggu terakhir
+    return agg.tail(8) 
 
 def hapus_pengukuran(pengukuran_id):
-    """Menghapus 1 baris riwayat pengukuran yang salah input"""
     conn = get_conn()
     conn.execute("DELETE FROM pengukuran WHERE id = ?", (pengukuran_id,))
     conn.commit()
     conn.close()
 
 def hapus_pasien_total(pasien_id):
-    """Menghapus seluruh data pasien beserta semua riwayat pengukurannya"""
     try:
         conn = get_conn()
-        # Hapus riwayat pengukurannya dulu (karena ada foreign key constraint)
         conn.execute("DELETE FROM pengukuran WHERE pasien_id = ?", (pasien_id,))
-        # Baru hapus data utama pasiennya!
         conn.execute("DELETE FROM pasien WHERE id = ?", (pasien_id,))
         conn.commit()
         conn.close()
@@ -219,12 +209,10 @@ st.set_page_config(
 # --- 2. INJEKSI CUSTOM CSS ---
 st.markdown("""
     <style>
-    /* --- MENGHILANGKAN JEJAK STREAMLIT --- */
     [data-testid="stHeader"] { visibility: hidden; }
     #MainMenu { visibility: hidden; }
     footer { visibility: hidden; }
 
-    /* CSS Desain Bawaanmu */
     .stApp { background-color: #F4F9F9; }
     div[data-testid="metric-container"] {
         background-color: white; border: 1px solid #E0E0E0; padding: 15px;
@@ -267,7 +255,7 @@ with col_kanan:
 
 st.markdown("---")
 
-# --- 4. KALKULATOR Z-SCORE RESMI WHO (LMS, via pygrowup) ---
+# --- 4. KALKULATOR Z-SCORE RESMI WHO ---
 @st.cache_resource
 def get_calculator():
     return Calculator(adjust_height_data=False, adjust_weight_scores=False, include_cdc=False)
@@ -648,7 +636,7 @@ with tab2:
                 "BB (kg)": r["bb"], "TB (cm)": r["tb"],
                 "WAZ": r["waz"], "HAZ": r["haz"], "WHZ": r["whz"],
                 "Status Gizi": r["status_gizi"],
-                "Red Flag": "🚨" if r["red_flags"] else "-",
+                "Red Flag": "🚨" if r["red_flag"] else "-",
                 "Tindak Lanjut": r["tindak_lanjut"],
                 "Catatan": r["catatan"] or "-"
             } for r in riwayat])
@@ -762,7 +750,7 @@ with tab2:
         st.caption("Isinya: sheet Daftar Pasien + sheet Rekap Semua Pengukuran + sheet riwayat pasien terpilih (kalau ada). Cocok buat lapor ke dinas kesehatan atau backup manual.")
 
     st.markdown("---")
-    st.subheader("📊 Ringkasan Populasi (data asli dari database, bukan simulasi)")
+    st.subheader("📊 Ringkasan Populasi")
     col_dash1, col_dash2 = st.columns(2)
 
     with col_dash1:
