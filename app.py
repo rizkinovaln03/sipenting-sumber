@@ -320,11 +320,74 @@ def get_kurva_haz(jk):
         sd3neg.append(float(v["SD3neg"]))
     df = pd.DataFrame({"bulan": bulan, "median": median, "sd2neg": sd2neg, "sd3neg": sd3neg}).sort_values("bulan")
     return df
+    
+@st.cache_data
+def get_kurva_waz(jk):
+    calc = get_calculator()
+    table = calc.wefa_boys_0_5 if jk == "Laki-laki" else calc.wefa_girls_0_5
+    bulan, median, sd2neg, sd3neg = [], [], [], []
+    for k, v in table.items():
+        if k == "field_name": continue
+        bulan.append(float(v["Month"]))
+        median.append(float(v["SD0"]))
+        sd2neg.append(float(v["SD2neg"]))
+        sd3neg.append(float(v["SD3neg"]))
+    return pd.DataFrame({"bulan": bulan, "median": median, "sd2neg": sd2neg, "sd3neg": sd3neg}).sort_values("bulan")
+
+@st.cache_data
+def get_kurva_whz(jk, usia_bulan):
+    calc = get_calculator()
+    # WHO membedakan tabel grafik 0-24 bulan (Panjang) dan 24-60 bulan (Tinggi)
+    is_length = usia_bulan < 24
+    if is_length:
+        table = calc.wfl_boys_0_2 if jk == "Laki-laki" else calc.wfl_girls_0_2
+        x_key = "Length"
+    else:
+        table = calc.wfh_boys_2_5 if jk == "Laki-laki" else calc.wfh_girls_2_5
+        x_key = "Height"
+        
+    tinggi, median, sd2neg, sd3neg, sd2pos, sd3pos = [], [], [], [], [], []
+    for k, v in table.items():
+        if k == "field_name": continue
+        tinggi.append(float(v[x_key]))
+        median.append(float(v["SD0"]))
+        sd2neg.append(float(v["SD2neg"]))
+        sd3neg.append(float(v["SD3neg"]))
+        sd2pos.append(float(v["SD2"]))
+        sd3pos.append(float(v["SD3"]))
+        
+    df = pd.DataFrame({"tinggi": tinggi, "median": median, "sd2neg": sd2neg, "sd3neg": sd3neg, "sd2pos": sd2pos, "sd3pos": sd3pos})
+    return df.sort_values("tinggi"), is_length
 
 
-def tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur, bb, usia_bulan):
+def tentukan_status_dan_tindak_lanjut(waz, haz, whz, red_flags_aktif, tgl_ukur, bb, usia_bulan):
+    # --- 1. TENTUKAN 3 STATUS KLINIS (Untuk ditampilkan di 3 Kotak UI Web) ---
+    status_bb = "N/A"
+    if waz is not None:
+        if waz < -3: status_bb = "Sangat Kurang"
+        elif waz < -2: status_bb = "Kurang (Underweight)"
+        elif waz <= 1: status_bb = "Normal"
+        else: status_bb = "Risiko BB Lebih"
+        
+    status_tb = "N/A"
+    if haz is not None:
+        if haz < -3: status_tb = "Sangat Pendek (Severely Stunted)"
+        elif haz < -2: status_tb = "Pendek (Stunted)"
+        elif haz <= 3: status_tb = "Normal"
+        else: status_tb = "Tinggi"
+        
+    status_gizi = "N/A"
+    if whz is not None:
+        if whz < -3: status_gizi = "Gizi Buruk (Severely Wasted)"
+        elif whz < -2: status_gizi = "Gizi Kurang (Wasted)"
+        elif whz <= 1: status_gizi = "Gizi Baik (Normal)"
+        elif whz <= 2: status_gizi = "Berisiko Gizi Lebih"
+        elif whz <= 3: status_gizi = "Gizi Lebih (Overweight)"
+        else: status_gizi = "Obesitas (Obese)"
+
+    # --- 2. LOGIKA EDUKASI & TINDAK LANJUT (MURNI DARI KODINGAN ASLIMU) ---
     if haz is None:
-        return None, None
+        return None, None, None, None
         
     status = "Normal" if haz >= -2 else ("Severely Stunted" if haz < -3 else "Stunted")
     
@@ -373,7 +436,7 @@ def tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur, bb, usia_b
             "Hanya air putih di antara jadwal. Lingkungan netral, **TANPA paksaan & TANPA distraksi (HP/TV/Mainan)**.\n"
         )
 
-    # 4. PENYUSUNAN TEKS TINDAK LANJUT (Otomatis bedakan <6 bulan dan >=6 bulan)
+    # 4. PENYUSUNAN TEKS TINDAK LANJUT (Hanya dipicu oleh HAZ dan Red Flag)
     if red_flags_aktif or haz < -3:
         gizi_tambahan = "- 🥩 **Gizi:** Wajib Protein Hewani setiap porsi MPASI!" if usia_bulan >= 6 else "- 🍼 **Laktasi:** Fokus perbaikan manajemen laktasi / evaluasi indikasi susu formula medis."
         tindak_lanjut = (
@@ -408,7 +471,8 @@ def tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur, bb, usia_b
             "- 🏃 **Tumbuh Kembang:** Stimulasi perkembangan secara rutin."
         )
         
-    return status, tindak_lanjut.strip()
+    # Mengembalikan 3 status Kemenkes untuk UI + 1 Tindak Lanjut dari logikamu
+    return status_bb, status_tb, status_gizi, tindak_lanjut.strip()
 
 # --- 5. SISTEM TABS MULTI-HALAMAN ---
 tab1, tab2, tab3 = st.tabs(["🧮 Skrining & Kurva", "📖 Buku KIA & Monitoring", "⚖️ Referensi Klinis"])
@@ -515,44 +579,76 @@ with tab1:
                 for err in st.session_state.zscore_errors:
                     st.error(f"⚠️ Gagal menghitung salah satu Z-score: {err}")
 
-            if haz is None:
-                st.warning("HAZ tidak dapat dihitung untuk input ini. Periksa kembali data usia/tinggi badan.")
+            if haz is None or whz is None or waz is None:
+                st.warning("Data tidak lengkap untuk dihitung. Periksa kembali usia/berat/tinggi badan.")
             else:
-                status_haz, tindak_lanjut = tentukan_status_dan_tindak_lanjut(haz, red_flags_aktif, tgl_ukur, bb, usia_bulan)
+                status_bb, status_tb, status_gizi, tindak_lanjut = tentukan_status_dan_tindak_lanjut(waz, haz, whz, red_flags_aktif, tgl_ukur, bb, usia_bulan)
                 nama_tampil = pasien_lama["nama"] if pasien_lama else nama_anak
 
-                st.success(f"✅ Analisis Gizi untuk **{nama_tampil}** ({jk}, usia {usia_bulan:.1f} bulan, {tgl_ukur.strftime('%d %B %Y')}).")
+                st.success(f"✅ Analisis Gizi Kemenkes untuk **{nama_tampil}** ({jk}, usia {usia_bulan:.1f} bulan).")
 
+                # TAMPILKAN 3 METRIK DIAGNOSA UTAMA
                 col_res1, col_res2, col_res3 = st.columns(3)
-                col_res1.metric("Berat/Umur (WAZ)", f"{waz} SD" if waz is not None else "N/A")
-                col_res2.metric("Tinggi/Umur (HAZ)", f"{haz} SD", status_haz, delta_color="off" if haz < -2 else "normal")
-                col_res3.metric("Berat/Tinggi (WHZ)", f"{whz} SD" if whz is not None else "N/A")
+                col_res1.metric("Berat/Umur (BB/U)", f"{waz} SD", status_bb, delta_color="off" if (waz < -2) else "normal")
+                col_res2.metric("Tinggi/Umur (TB/U)", f"{haz} SD", status_tb, delta_color="off" if (haz < -2) else "normal")
+                col_res3.metric("Berat/Tinggi (BB/TB)", f"{whz} SD", status_gizi, delta_color="off" if (whz < -2 or whz > 2) else "normal")
 
                 st.markdown("---")
-                st.subheader(f"📈 Kurva Pertumbuhan WHO ({jk})")
-                df_kurva = get_kurva_haz(jk)
+                st.subheader("📈 Kurva Pertumbuhan Anak (WHO)")
+                
+                # TAMPILKAN 3 GRAFIK DALAM BENTUK TAB
+                tab_kurva_bb, tab_kurva_tb, tab_kurva_gizi = st.tabs(["📉 BB/Umur", "📉 TB/Umur", "📉 BB/Tinggi (Gizi)"])
+                
+                with tab_kurva_tb:
+                    df_tb = get_kurva_haz(jk)
+                    fig_tb = go.Figure()
+                    fig_tb.add_trace(go.Scatter(x=df_tb["bulan"], y=df_tb["median"], mode='lines', name='0 SD', line=dict(color='green')))
+                    fig_tb.add_trace(go.Scatter(x=df_tb["bulan"], y=df_tb["sd2neg"], mode='lines', name='-2 SD (Stunted)', line=dict(color='orange', dash='dash')))
+                    fig_tb.add_trace(go.Scatter(x=df_tb["bulan"], y=df_tb["sd3neg"], mode='lines', name='-3 SD (Sev. Stunted)', line=dict(color='red', dash='dot')))
+                    
+                    if pasien_lama:
+                        riw = get_riwayat_pengukuran(pasien_lama["id"])
+                        if riw: fig_tb.add_trace(go.Scatter(x=[r["usia_bulan"] for r in riw], y=[r["tb"] for r in riw], mode='lines+markers', name='Riwayat', line=dict(color='#7d3c98', dash='dot')))
+                    fig_tb.add_trace(go.Scatter(x=[usia_bulan], y=[tb], mode='markers', name='Kunjungan Ini', marker=dict(color='blue', size=14, symbol='star')))
+                    fig_tb.update_layout(xaxis_title="Usia (Bulan)", yaxis_title="Tinggi/Panjang (cm)", height=350, margin=dict(l=0, r=0, t=20, b=0))
+                    st.plotly_chart(fig_tb, use_container_width=True)
 
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(x=df_kurva["bulan"], y=df_kurva["median"], mode='lines',
-                                          name='Median (0 SD)', line=dict(color='green', width=2)))
-                fig.add_trace(go.Scatter(x=df_kurva["bulan"], y=df_kurva["sd2neg"], mode='lines',
-                                          name='-2 SD (Stunted)', line=dict(color='orange', width=2, dash='dash')))
-                fig.add_trace(go.Scatter(x=df_kurva["bulan"], y=df_kurva["sd3neg"], mode='lines',
-                                          name='-3 SD (Severely Stunted)', line=dict(color='red', width=2, dash='dot')))
+                with tab_kurva_bb:
+                    df_bb = get_kurva_waz(jk)
+                    fig_bb = go.Figure()
+                    fig_bb.add_trace(go.Scatter(x=df_bb["bulan"], y=df_bb["median"], mode='lines', name='0 SD', line=dict(color='green')))
+                    fig_bb.add_trace(go.Scatter(x=df_bb["bulan"], y=df_bb["sd2neg"], mode='lines', name='-2 SD (Kurang)', line=dict(color='orange', dash='dash')))
+                    fig_bb.add_trace(go.Scatter(x=df_bb["bulan"], y=df_bb["sd3neg"], mode='lines', name='-3 SD (Buruk)', line=dict(color='red', dash='dot')))
+                    
+                    if pasien_lama:
+                        riw = get_riwayat_pengukuran(pasien_lama["id"])
+                        if riw: fig_bb.add_trace(go.Scatter(x=[r["usia_bulan"] for r in riw], y=[r["bb"] for r in riw], mode='lines+markers', name='Riwayat', line=dict(color='#7d3c98', dash='dot')))
+                    fig_bb.add_trace(go.Scatter(x=[usia_bulan], y=[bb], mode='markers', name='Kunjungan Ini', marker=dict(color='blue', size=14, symbol='star')))
+                    fig_bb.update_layout(xaxis_title="Usia (Bulan)", yaxis_title="Berat Badan (kg)", height=350, margin=dict(l=0, r=0, t=20, b=0))
+                    st.plotly_chart(fig_bb, use_container_width=True)
 
-                if pasien_lama:
-                    riwayat = get_riwayat_pengukuran(pasien_lama["id"])
-                    if riwayat:
-                        x_riwayat = [r["usia_bulan"] for r in riwayat]
-                        y_riwayat = [r["tb"] for r in riwayat]
-                        fig.add_trace(go.Scatter(x=x_riwayat, y=y_riwayat, mode='lines+markers',
-                                                  name='Riwayat Kunjungan', line=dict(color='#7d3c98', width=2, dash='dot'),
-                                                  marker=dict(size=8)))
-
-                fig.add_trace(go.Scatter(x=[usia_bulan], y=[tb], mode='markers', name=f'Kunjungan Ini: {nama_tampil}',
-                                          marker=dict(color='blue', size=14, symbol='star')))
-                fig.update_layout(xaxis_title="Usia (Bulan)", yaxis_title="Tinggi/Panjang Badan (cm)", height=420)
-                st.plotly_chart(fig, use_container_width=True)
+                with tab_kurva_gizi:
+                    df_whz, is_length = get_kurva_whz(jk, usia_bulan)
+                    label_x = "Panjang Badan (cm)" if is_length else "Tinggi Badan (cm)"
+                    
+                    fig_whz = go.Figure()
+                    fig_whz.add_trace(go.Scatter(x=df_whz["tinggi"], y=df_whz["sd3pos"], mode='lines', name='+3 SD (Obesitas)', line=dict(color='red', dash='dot')))
+                    fig_whz.add_trace(go.Scatter(x=df_whz["tinggi"], y=df_whz["sd2pos"], mode='lines', name='+2 SD (Gizi Lebih)', line=dict(color='orange', dash='dash')))
+                    fig_whz.add_trace(go.Scatter(x=df_whz["tinggi"], y=df_whz["median"], mode='lines', name='0 SD (Normal)', line=dict(color='green')))
+                    fig_whz.add_trace(go.Scatter(x=df_whz["tinggi"], y=df_whz["sd2neg"], mode='lines', name='-2 SD (Gizi Kurang)', line=dict(color='orange', dash='dash')))
+                    fig_whz.add_trace(go.Scatter(x=df_whz["tinggi"], y=df_whz["sd3neg"], mode='lines', name='-3 SD (Gizi Buruk)', line=dict(color='red', dash='dot')))
+                    
+                    if pasien_lama:
+                        riw = get_riwayat_pengukuran(pasien_lama["id"])
+                        # Hanya ambil riwayat yang kategorinya sama (Panjang vs Tinggi) agar kurvanya presisi
+                        if riw: 
+                            x_riw = [r["tb"] for r in riw if (r["usia_bulan"] < 24) == is_length]
+                            y_riw = [r["bb"] for r in riw if (r["usia_bulan"] < 24) == is_length]
+                            if x_riw: fig_whz.add_trace(go.Scatter(x=x_riw, y=y_riw, mode='lines+markers', name='Riwayat', line=dict(color='#7d3c98', dash='dot')))
+                    
+                    fig_whz.add_trace(go.Scatter(x=[tb], y=[bb], mode='markers', name='Kunjungan Ini', marker=dict(color='blue', size=14, symbol='star')))
+                    fig_whz.update_layout(xaxis_title=label_x, yaxis_title="Berat Badan (kg)", height=350, margin=dict(l=0, r=0, t=20, b=0))
+                    st.plotly_chart(fig_whz, use_container_width=True)
 
                 st.markdown("---")
                 st.subheader("💡 Intervensi & Tindak Lanjut")
@@ -567,14 +663,16 @@ with tab1:
                         pasien_id = pasien_lama["id"]
                     else:
                         pasien_id = simpan_pasien_baru(no_rm or None, nama_anak, nama_ibu, alamat, tgl_lahir, jk)
+                    
+                    # Simpan ketiga status ke database (dipisahkan koma)
+                    status_gabungan = f"BB/U: {status_bb} | TB/U: {status_tb} | BB/TB: {status_gizi}"
                     simpan_pengukuran(pasien_id, tgl_ukur, usia_bulan, bb, tb, waz, haz, whz,
-                                       status_haz, red_flags_aktif, tindak_lanjut, catatan_kunjungan)
+                                       status_gabungan, red_flags_aktif, tindak_lanjut, catatan_kunjungan)
                     st.success("🎉 Data disimpan ke rekam pasien! Cek riwayatnya di tab Buku KIA.")
                     st.session_state.sudah_dihitung = False
                     st.session_state.pasien_id_terpilih = pasien_id
                     st.rerun() # Refresh instan
         else:
-            # Pesan default jika belum klik Hitung
             st.info("👈 Silakan isi form pendaftaran/pengukuran di sebelah kiri, lalu klik 'Hitung & Analisis Gizi' untuk menampilkan hasil Z-Score.")
             
 # ==========================================
@@ -616,14 +714,38 @@ with tab2:
             st.markdown("**📋 Riwayat Pengukuran**")
             st.dataframe(df_riwayat, use_container_width=True, hide_index=True)
 
-            st.markdown("**📈 Tren Pertumbuhan (HAZ dari waktu ke waktu)**")
-            fig_tren = go.Figure()
-            fig_tren.add_trace(go.Scatter(x=df_riwayat["Tanggal"], y=df_riwayat["HAZ"], mode='lines+markers',
-                                           name='HAZ', line=dict(color='#1A5276', width=3), marker=dict(size=9)))
-            fig_tren.add_hline(y=-2, line_dash="dash", line_color="orange", annotation_text="-2 SD (Stunted)")
-            fig_tren.add_hline(y=-3, line_dash="dot", line_color="red", annotation_text="-3 SD (Severely Stunted)")
-            fig_tren.update_layout(xaxis_title="Tanggal Kunjungan", yaxis_title="HAZ (SD)", height=350)
-            st.plotly_chart(fig_tren, use_container_width=True)
+            st.markdown("**📈 Tren Pertumbuhan Z-Score (Riwayat Kunjungan)**")
+            # Membagi grafik tren menjadi 3 Tab
+            tab_tren_bb, tab_tren_tb, tab_tren_gizi = st.tabs(["📉 Tren BB/Umur (WAZ)", "📉 Tren TB/Umur (HAZ)", "📉 Tren Gizi (WHZ)"])
+            
+            with tab_tren_bb:
+                fig_waz = go.Figure()
+                fig_waz.add_trace(go.Scatter(x=df_riwayat["Tanggal"], y=df_riwayat["WAZ"], mode='lines+markers',
+                                             name='WAZ', line=dict(color='#28B463', width=3), marker=dict(size=9)))
+                fig_waz.add_hline(y=-2, line_dash="dash", line_color="orange", annotation_text="-2 SD (Kurang)")
+                fig_waz.add_hline(y=-3, line_dash="dot", line_color="red", annotation_text="-3 SD (Sangat Kurang)")
+                fig_waz.update_layout(xaxis_title="Tanggal Kunjungan", yaxis_title="Z-Score BB/U (WAZ)", height=350, margin=dict(t=20))
+                st.plotly_chart(fig_waz, use_container_width=True)
+
+            with tab_tren_tb:
+                fig_haz = go.Figure()
+                fig_haz.add_trace(go.Scatter(x=df_riwayat["Tanggal"], y=df_riwayat["HAZ"], mode='lines+markers',
+                                             name='HAZ', line=dict(color='#1A5276', width=3), marker=dict(size=9)))
+                fig_haz.add_hline(y=-2, line_dash="dash", line_color="orange", annotation_text="-2 SD (Pendek)")
+                fig_haz.add_hline(y=-3, line_dash="dot", line_color="red", annotation_text="-3 SD (Sangat Pendek)")
+                fig_haz.update_layout(xaxis_title="Tanggal Kunjungan", yaxis_title="Z-Score TB/U (HAZ)", height=350, margin=dict(t=20))
+                st.plotly_chart(fig_haz, use_container_width=True)
+                
+            with tab_tren_gizi:
+                fig_whz = go.Figure()
+                fig_whz.add_trace(go.Scatter(x=df_riwayat["Tanggal"], y=df_riwayat["WHZ"], mode='lines+markers',
+                                             name='WHZ', line=dict(color='#8E44AD', width=3), marker=dict(size=9)))
+                fig_whz.add_hline(y=3, line_dash="dot", line_color="red", annotation_text="+3 SD (Obesitas)")
+                fig_whz.add_hline(y=2, line_dash="dash", line_color="orange", annotation_text="+2 SD (Gizi Lebih)")
+                fig_whz.add_hline(y=-2, line_dash="dash", line_color="orange", annotation_text="-2 SD (Gizi Kurang)")
+                fig_whz.add_hline(y=-3, line_dash="dot", line_color="red", annotation_text="-3 SD (Gizi Buruk)")
+                fig_whz.update_layout(xaxis_title="Tanggal Kunjungan", yaxis_title="Z-Score BB/TB (WHZ)", height=350, margin=dict(t=20))
+                st.plotly_chart(fig_whz, use_container_width=True)
 
             df_pasien_ini = pd.DataFrame([dict(detail)])
             excel_pasien = buat_file_excel(
