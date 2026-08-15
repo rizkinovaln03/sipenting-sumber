@@ -457,8 +457,13 @@ with tab1:
             st.markdown("---")
             st.markdown("**🩺 Skrining Klinis Tambahan (Opsional)**")
             
-            gtm_aktif = st.checkbox("❓ Anak mengalami GTM / Kesulitan Makan?")
-            
+            with st.expander("🍽️ Skrining GTM & Feeding Rules (Buka jika anak susah makan)"):
+                st.info("Skrining Inappropriate Feeding Practice (Berdasarkan IDAI). Centang 'Ya' jika terjadi kebiasaan berikut:")
+                gtm_1 = st.selectbox("1. Waktu makan berlangsung lebih dari 30 menit?", ["Tidak (0)", "Ya (1)"])
+                gtm_2 = st.selectbox("2. Makan sambil main HP, nonton TV, atau jalan-jalan?", ["Tidak (0)", "Ya (1)"])
+                gtm_3 = st.selectbox("3. Anak dipaksa makan (force feeding) atau dikejar-kejar?", ["Tidak (0)", "Ya (1)"])
+                gtm_4 = st.selectbox("4. Sering minum susu / ngemil berdekatan dengan jam makan?", ["Tidak (0)", "Ya (1)"])
+                
             with st.expander("🦠 Form Skoring TB IDAI (Buka jika ada indikasi)"):
                 st.info("Catatan: Skor ≥ 6 (dengan max 1 skor/parameter) mengindikasikan diagnosis klinis TB.")
                 tb_1 = st.selectbox("1. Kontak dengan pasien TB Paru", ["Tidak Jelas (0)", "Laporan Keluarga / BTA tidak diketahui (2)", "BTA Positif (3)"])
@@ -484,7 +489,12 @@ with tab1:
                 int(tb_7.split("(")[1].split(")")[0]) + int(tb_8.split("(")[1].split(")")[0])
             )
             st.session_state.skor_tb_input = skor_tb_total
-            st.session_state.is_gtm_input = "Ya" if gtm_aktif else "Tidak"
+            
+            skor_gtm_total = (
+                int(gtm_1.split("(")[1].split(")")[0]) + int(gtm_2.split("(")[1].split(")")[0]) +
+                int(gtm_3.split("(")[1].split(")")[0]) + int(gtm_4.split("(")[1].split(")")[0])
+            )
+            st.session_state.is_gtm_input = "Ya" if skor_gtm_total > 0 else "Tidak"
             
             if not pasien_lama and (nama_anak == "" or nama_ibu == ""):
                 st.error("⚠️ Nama Anak dan Ibu wajib diisi!")
@@ -750,7 +760,7 @@ with tab2:
         st.caption("Isinya: sheet Daftar Pasien + sheet Rekap Semua Pengukuran + sheet riwayat pasien terpilih (kalau ada). Cocok buat lapor ke dinas kesehatan atau backup manual.")
 
     st.markdown("---")
-    st.subheader("📊 Ringkasan Populasi")
+    st.subheader("📊 Ringkasan Populasi (data asli dari database, bukan simulasi)")
     col_dash1, col_dash2 = st.columns(2)
 
     with col_dash1:
