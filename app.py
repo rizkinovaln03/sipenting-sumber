@@ -324,7 +324,7 @@ def get_kurva_haz(jk):
 @st.cache_data
 def get_kurva_waz(jk):
     calc = get_calculator()
-    table = calc.wefa_boys_0_5 if jk == "Laki-laki" else calc.wefa_girls_0_5
+    table = calc.wfa_boys_0_5 if jk == "Laki-laki" else calc.wfa_girls_0_5
     bulan, median, sd2neg, sd3neg = [], [], [], []
     for k, v in table.items():
         if k == "field_name": continue
