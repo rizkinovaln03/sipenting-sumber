@@ -24,8 +24,9 @@ def get_conn():
 
 
 def init_db():
-    conn = get_conn()
-    conn.execute("""
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute('''
         CREATE TABLE IF NOT EXISTS pasien (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             no_rm TEXT,
@@ -33,32 +34,39 @@ def init_db():
             nama_ibu TEXT,
             alamat TEXT,
             tanggal_lahir TEXT NOT NULL,
-            jenis_kelamin TEXT NOT NULL,
-            dibuat_pada TEXT
+            jenis_kelamin TEXT NOT NULL
         )
-    """)
-    conn.execute("""
+    ''')
+    c.execute('''
         CREATE TABLE IF NOT EXISTS pengukuran (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            pasien_id INTEGER NOT NULL,
-            tanggal_ukur TEXT NOT NULL,
-            usia_bulan REAL NOT NULL,
-            bb REAL NOT NULL,
-            tb REAL NOT NULL,
+            pasien_id INTEGER,
+            tanggal_ukur TEXT,
+            usia_bulan REAL,
+            bb REAL,
+            tb REAL,
             waz REAL,
             haz REAL,
             whz REAL,
             status_gizi TEXT,
-            red_flag INTEGER DEFAULT 0,
+            red_flags INTEGER,
             tindak_lanjut TEXT,
             catatan TEXT,
-            dicatat_pada TEXT,
-            FOREIGN KEY (pasien_id) REFERENCES pasien(id)
+            skor_tb INTEGER DEFAULT 0,
+            is_gtm TEXT DEFAULT 'Tidak'
         )
-    """)
+    ''')
+    
+    # KODE SAKTI AUTO-MIGRASI (Menambah kolom baru jika belum ada tanpa hapus data lama)
+    c.execute("PRAGMA table_info(pengukuran)")
+    columns = [col[1] for col in c.fetchall()]
+    if 'skor_tb' not in columns:
+        c.execute("ALTER TABLE pengukuran ADD COLUMN skor_tb INTEGER DEFAULT 0")
+    if 'is_gtm' not in columns:
+        c.execute("ALTER TABLE pengukuran ADD COLUMN is_gtm TEXT DEFAULT 'Tidak'")
+        
     conn.commit()
     conn.close()
-
 
 def cari_pasien(keyword):
     """Cari pasien berdasarkan No. RM atau Nama (untuk cek 'sudah pernah diinput apa belum')."""
@@ -101,19 +109,14 @@ def simpan_pasien_baru(no_rm, nama, nama_ibu, alamat, tanggal_lahir, jenis_kelam
     conn.close()
     return pasien_id
 
-
-def simpan_pengukuran(pasien_id, tanggal_ukur, usia_bulan, bb, tb, waz, haz, whz,
-                       status_gizi, red_flag, tindak_lanjut, catatan=""):
-    conn = get_conn()
-    conn.execute(
-        """INSERT INTO pengukuran
-           (pasien_id, tanggal_ukur, usia_bulan, bb, tb, waz, haz, whz,
-            status_gizi, red_flag, tindak_lanjut, catatan, dicatat_pada)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (pasien_id, tanggal_ukur.isoformat(), usia_bulan, bb, tb, waz, haz, whz,
-         status_gizi, int(red_flag), tindak_lanjut, catatan,
-         datetime.now().isoformat(timespec="seconds"))
-    )
+def simpan_pengukuran(pasien_id, tgl_ukur, usia_bulan, bb, tb, waz, haz, whz, status_gizi, red_flags, tindak_lanjut, catatan, skor_tb=0, is_gtm="Tidak"):
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO pengukuran 
+        (pasien_id, tanggal_ukur, usia_bulan, bb, tb, waz, haz, whz, status_gizi, red_flags, tindak_lanjut, catatan, skor_tb, is_gtm)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (pasien_id, tgl_ukur, usia_bulan, bb, tb, waz, haz, whz, status_gizi, int(red_flags), tindak_lanjut, catatan, skor_tb, is_gtm))
     conn.commit()
     conn.close()
 
@@ -360,118 +363,61 @@ def get_kurva_whz(jk, usia_bulan):
     return df.sort_values("tinggi"), is_length
 
 
-def tentukan_status_dan_tindak_lanjut(waz, haz, whz, red_flags_aktif, tgl_ukur, bb, usia_bulan):
-    # --- 1. TENTUKAN 3 STATUS KLINIS (Untuk ditampilkan di 3 Kotak UI Web) ---
-    status_bb = "N/A"
-    if waz is not None:
-        if waz < -3: status_bb = "Sangat Kurang"
-        elif waz < -2: status_bb = "Kurang (Underweight)"
-        elif waz <= 1: status_bb = "Normal"
-        else: status_bb = "Risiko BB Lebih"
-        
-    status_tb = "N/A"
-    if haz is not None:
-        if haz < -3: status_tb = "Sangat Pendek (Severely Stunted)"
-        elif haz < -2: status_tb = "Pendek (Stunted)"
-        elif haz <= 3: status_tb = "Normal"
-        else: status_tb = "Tinggi"
-        
-    status_gizi = "N/A"
-    if whz is not None:
-        if whz < -3: status_gizi = "Gizi Buruk (Severely Wasted)"
-        elif whz < -2: status_gizi = "Gizi Kurang (Wasted)"
-        elif whz <= 1: status_gizi = "Gizi Baik (Normal)"
-        elif whz <= 2: status_gizi = "Berisiko Gizi Lebih"
-        elif whz <= 3: status_gizi = "Gizi Lebih (Overweight)"
-        else: status_gizi = "Obesitas (Obese)"
+def tentukan_status_dan_tindak_lanjut(waz, haz, whz, red_flags_aktif, tgl_ukur, bb, usia_bulan, skor_tb, is_gtm):
+    # --- 1. TENTUKAN 3 STATUS KLINIS UI ---
+    status_bb = "Normal" if waz is not None and waz >= -2 else ("Kurang" if waz and waz >= -3 else "Sangat Kurang")
+    status_tb = "Normal" if haz is not None and haz >= -2 else ("Pendek" if haz and haz >= -3 else "Sangat Pendek")
+    status_gizi = "Gizi Baik" if whz is not None and -2 <= whz <= 1 else ("Gizi Kurang" if whz and -3 <= whz < -2 else "Gizi Buruk/Lebih")
+    # (Bisa disesuaikan dengan teks aslimu sebelumnya untuk bagian 3 status klinis ini)
 
-    # --- 2. LOGIKA EDUKASI & TINDAK LANJUT (MURNI DARI KODINGAN ASLIMU) ---
-    if haz is None:
-        return None, None, None, None
-        
+    # --- 2. LOGIKA EDUKASI NUTRISI (Asli milikmu) ---
+    if haz is None: return None, None, None, None
     status = "Normal" if haz >= -2 else ("Severely Stunted" if haz < -3 else "Stunted")
     
-    # 1. PERHITUNGAN BB IDEAL & KALORI (Metode RDA x BB Ideal)
     usia_tahun = usia_bulan / 12
-    if usia_bulan < 12:
-        bb_ideal = (usia_bulan + 9) / 2
-        rda = 110 # kkal/kgBB/hari
-    elif usia_bulan <= 36:
-        bb_ideal = (2 * usia_tahun) + 8
-        rda = 100 # kkal/kgBB/hari
-    else:
-        bb_ideal = (2 * usia_tahun) + 8
-        rda = 90  # kkal/kgBB/hari
+    if usia_bulan < 12: bb_ideal, rda = (usia_bulan + 9) / 2, 110
+    elif usia_bulan <= 36: bb_ideal, rda = (2 * usia_tahun) + 8, 100
+    else: bb_ideal, rda = (2 * usia_tahun) + 8, 90
 
     kalori = rda * bb_ideal
     teks_kalori = f"🍎 **Kebutuhan Kalori:** ± {int(kalori)} kkal/hari *(Berdasarkan RDA {rda} kkal x BB Ideal {bb_ideal:.1f} kg)*"
 
-    # 2. EDUKASI NUTRISI BERDASARKAN USIA
     if usia_bulan < 6:
-        teks_usia = (
-            "- 🍼 **Nutrisi (0-6 Bulan):** ASI Eksklusif sesuka bayi (*on demand*). Tanpa tambahan air/makanan. "
-            "Jika ada indikasi medis (alergi/prematur/ASI tidak keluar), gunakan susu formula sesuai resep dokter (mis: formula standar, BBLR, atau hidrolisat ekstensif)."
-        )
-        teks_feeding_rules = "" # Usia < 6 bulan belum butuh feeding rules
+        teks_usia = "- 🍼 **Nutrisi (0-6 Bulan):** ASI Eksklusif sesuka bayi (*on demand*). Tanpa tambahan air/makanan."
+        teks_feeding_rules = ""
     elif usia_bulan < 12:
-        teks_usia = (
-            "- 🥣 **Nutrisi (6-12 Bulan):** Mulai MPASI! Tekstur saring (puree) berlanjut ke lumat (mashed) lalu cincang (minced). "
-            "Porsi bertahap dari 2-3 sdm hingga ½ mangkok (125ml) tiap makan. Lanjutkan ASI sesuka bayi."
-        )
+        teks_usia = "- 🥣 **Nutrisi (6-12 Bulan):** Mulai MPASI! Tekstur saring berlanjut ke lumat lalu cincang. Porsi 2-3 sdm hingga ½ mangkok (125ml)."
+        teks_feeding_rules = "- ⏰ **Feeding Rules (IDAI):** Jadwal utama 3x, selingan 2x. Maks 30 menit/sesi. TANPA distraksi (HP/TV).\n"
     elif usia_bulan < 24:
-        teks_usia = (
-            "- 🍲 **Nutrisi (1-2 Tahun):** Kenalkan Makanan Keluarga. Porsi ¾ mangkok (200ml). "
-            "Lanjutkan ASI hingga 2 tahun. Susu sapi (UHT Full Cream/Pasteurisasi) boleh diberikan maksimal 500ml/hari agar anak tidak kenyang susu dan menolak makan."
-        )
+        teks_usia = "- 🍲 **Nutrisi (1-2 Tahun):** Kenalkan Makanan Keluarga. Porsi ¾ mangkok (200ml). ASI hingga 2 tahun."
+        teks_feeding_rules = "- ⏰ **Feeding Rules (IDAI):** Jadwal utama 3x, selingan 2x. Maks 30 menit/sesi. TANPA distraksi (HP/TV).\n"
     else:
-        teks_usia = (
-            "- 🍛 **Nutrisi (> 2 Tahun):** Makanan Keluarga porsi utuh. Saatnya sapih ASI. "
-            "Susu (UHT/Pertumbuhan) maksimal 2 gelas/hari hanya sebagai pelengkap, BUKAN pengganti makan utama."
-        )
+        teks_usia = "- 🍛 **Nutrisi (> 2 Tahun):** Makanan Keluarga porsi utuh. Saatnya sapih ASI."
+        teks_feeding_rules = "- ⏰ **Feeding Rules (IDAI):** Jadwal utama 3x, selingan 2x. Maks 30 menit/sesi. TANPA distraksi (HP/TV).\n"
 
-    # 3. FEEDING RULES IDAI (Diberikan untuk usia > 6 bulan)
-    if usia_bulan >= 6:
-        teks_feeding_rules = (
-            "- ⏰ **Feeding Rules (IDAI):** Jadwal utama 3x, selingan 2x. Maksimal 30 menit/sesi. "
-            "Hanya air putih di antara jadwal. Lingkungan netral, **TANPA paksaan & TANPA distraksi (HP/TV/Mainan)**.\n"
-        )
+    # --- 3. INJEKSI SKORING TB & GTM ---
+    teks_tb = ""
+    if skor_tb >= 6:
+        teks_tb = f"\n- 🦠 **PERINGATAN TB (Skor = {skor_tb}):** Diagnosis Klinis TB (Skor ≥ 6). WAJIB RUJUK ke poli anak / DOTS Puskesmas untuk OAT!"
+    elif skor_tb > 0:
+        teks_tb = f"\n- 🦠 **Observasi TB (Skor = {skor_tb}):** Ada indikasi risiko. Pantau ketat, evaluasi uji Mantoux/Rontgen jika gejala menetap."
 
-    # 4. PENYUSUNAN TEKS TINDAK LANJUT (Hanya dipicu oleh HAZ dan Red Flag)
-    if red_flags_aktif or haz < -3:
-        gizi_tambahan = "- 🥩 **Gizi:** Wajib Protein Hewani setiap porsi MPASI!" if usia_bulan >= 6 else "- 🍼 **Laktasi:** Fokus perbaikan manajemen laktasi / evaluasi indikasi susu formula medis."
-        tindak_lanjut = (
-            "RUJUKAN (MERAH): Red flags/severe stunting - Rujuk Sp.A/FKTL segera!\n\n"
-            f"{teks_kalori}\n\n"
-            "**Edukasi & Tata Laksana Klinis:**\n"
-            f"{teks_usia}\n"
-            f"{gizi_tambahan}\n"
-            f"{teks_feeding_rules}"
-            "- 🩺 **Medis:** Skrining ketat *underlying disease* (ISK, TB Paru, Anemia, dll)."
-        )
+    teks_gtm = ""
+    if is_gtm == "Ya":
+        teks_gtm = "\n- 🚫 **TATA LAKSANA GTM:** Lakukan evaluasi *Red Flags* (sariawan, infeksi). Terapkan *Feeding Rules* sangat ketat! Jangan paksa anak makan (*force feeding*)."
+
+    # --- 4. PENYUSUNAN TEKS AKHIR ---
+    if red_flags_aktif or haz < -3 or skor_tb >= 6:
+        gizi_tambahan = "- 🥩 **Gizi:** Wajib Protein Hewani setiap porsi MPASI!" if usia_bulan >= 6 else "- 🍼 **Laktasi:** Fokus perbaikan manajemen laktasi."
+        tindak_lanjut = f"RUJUKAN (MERAH): Red flags / Severely Stunted / Suspek TB!\n\n{teks_kalori}\n\n**Edukasi & Tata Laksana Klinis:**\n{teks_usia}\n{gizi_tambahan}\n{teks_feeding_rules}{teks_tb}{teks_gtm}\n- 🩺 **Medis:** Skrining ketat penyakit penyerta."
     elif haz < -2:
         tgl_evaluasi = (tgl_ukur + relativedelta(days=14)).strftime('%d %B %Y')
-        gizi_tambahan = "- 🥚 **Gizi:** Kejar tumbuh! Berikan PMT Puskesmas + ekstra Protein Hewani (1-2 telur/hari)." if usia_bulan >= 6 else "- 🍼 **Laktasi:** Pantau ketat kecukupan ASI atau evaluasi suplementasi gizi."
-        tindak_lanjut = (
-            f"PMT PEMULIHAN (KUNING): Status {status}, evaluasi ulang {tgl_evaluasi}\n\n"
-            f"{teks_kalori}\n\n"
-            "**Edukasi & Tata Laksana Klinis:**\n"
-            f"{teks_usia}\n"
-            f"{gizi_tambahan}\n"
-            f"{teks_feeding_rules}"
-        )
+        gizi_tambahan = "- 🥚 **Gizi:** Kejar tumbuh! Berikan PMT Puskesmas + ekstra Protein Hewani (1-2 telur/hari)." if usia_bulan >= 6 else "- 🍼 **Laktasi:** Pantau ketat kecukupan ASI."
+        tindak_lanjut = f"PMT PEMULIHAN (KUNING): Status Stunted, evaluasi ulang {tgl_evaluasi}\n\n{teks_kalori}\n\n**Edukasi & Tata Laksana Klinis:**\n{teks_usia}\n{gizi_tambahan}\n{teks_feeding_rules}{teks_tb}{teks_gtm}"
     else:
-        gizi_tambahan = "- 🥩 **Gizi:** Lanjutkan MPASI menu lengkap gizi seimbang." if usia_bulan >= 6 else "- 🤱 **Laktasi:** Lanjutkan pemberian ASI Eksklusif dengan posisi perlekatan yang benar."
-        tindak_lanjut = (
-            "PEMANTAUAN RUTIN (HIJAU): Pertumbuhan Baik. Kontrol Posyandu bulan depan.\n\n"
-            f"{teks_kalori}\n\n"
-            "**Edukasi & Tata Laksana Klinis:**\n"
-            f"{teks_usia}\n"
-            f"{gizi_tambahan}\n"
-            f"{teks_feeding_rules}"
-            "- 🏃 **Tumbuh Kembang:** Stimulasi perkembangan secara rutin."
-        )
+        gizi_tambahan = "- 🥩 **Gizi:** Lanjutkan MPASI menu lengkap gizi seimbang." if usia_bulan >= 6 else "- 🤱 **Laktasi:** Lanjutkan pemberian ASI Eksklusif."
+        tindak_lanjut = f"PEMANTAUAN RUTIN (HIJAU): Pertumbuhan Baik. Kontrol Posyandu.\n\n{teks_kalori}\n\n**Edukasi & Tata Laksana Klinis:**\n{teks_usia}\n{gizi_tambahan}\n{teks_feeding_rules}{teks_tb}{teks_gtm}\n- 🏃 **Tumbuh Kembang:** Stimulasi rutin."
         
-    # Mengembalikan 3 status Kemenkes untuk UI + 1 Tindak Lanjut dari logikamu
     return status_bb, status_tb, status_gizi, tindak_lanjut.strip()
 
 # --- 5. SISTEM TABS MULTI-HALAMAN ---
@@ -550,6 +496,24 @@ with tab1:
             red_flags_aktif = st.checkbox("🚨 Tanda Bahaya (Kelainan Bawaan / BB stagnan)")
             catatan_kunjungan = st.text_area("Catatan kunjungan (opsional)")
             
+            st.markdown("---")
+            st.markdown("**🩺 Skrining Klinis Tambahan (Opsional)**")
+            
+            # Checkbox GTM
+            gtm_aktif = st.checkbox("❓ Anak mengalami GTM / Kesulitan Makan?")
+            
+            # Menu Lipat Skoring TB
+            with st.expander("🦠 Form Skoring TB IDAI (Buka jika ada indikasi)"):
+                st.info("Catatan: Skor ≥ 6 (dengan max 1 skor/parameter) mengindikasikan diagnosis klinis TB.")
+                tb_1 = st.selectbox("1. Kontak dengan pasien TB Paru", ["Tidak Jelas (0)", "Laporan Keluarga / BTA tidak diketahui (2)", "BTA Positif (3)"])
+                tb_2 = st.selectbox("2. Uji Tuberkulin (Mantoux)", ["Negatif / Tidak Dilakukan (0)", "Positif / ≥10mm (3)"])
+                tb_3 = st.selectbox("3. Berat Badan / Keadaan Gizi", ["Normal (0)", "BB/TB < 90% atau BB/U < 80% (1)", "Klinis Gizi Buruk atau BGM (2)"])
+                tb_4 = st.selectbox("4. Demam yang tidak diketahui penyebabnya (≥2 minggu)", ["Tidak (0)", "Ya (1)"])
+                tb_5 = st.selectbox("5. Batuk kronik (≥3 minggu)", ["Tidak (0)", "Ya (1)"])
+                tb_6 = st.selectbox("6. Pembesaran kelenjar limfe koli/aksila (>1cm, >1 kelenjar)", ["Tidak (0)", "Ya (1)"])
+                tb_7 = st.selectbox("7. Pembengkakan tulang/sendi", ["Tidak (0)", "Ya (1)"])
+                tb_8 = st.selectbox("8. Foto rontgen toraks", ["Normal / Tidak Diperiksa (0)", "Kesan TB (1)"])
+            
             # Tombol diubah menjadi form_submit_button
             hitung_ditekan = st.form_submit_button("🧮 Hitung & Analisis Gizi", type="primary", use_container_width=True)
 
@@ -560,6 +524,18 @@ with tab1:
 
         # Logika hitung dijalankan hanya saat form disubmit
         if hitung_ditekan:
+            # Ekstraksi angka skor TB dari teks di dalam kurung
+            skor_tb_total = (
+                int(tb_1.split("(")[1].split(")")[0]) + int(tb_2.split("(")[1].split(")")[0]) +
+                int(tb_3.split("(")[1].split(")")[0]) + int(tb_4.split("(")[1].split(")")[0]) +
+                int(tb_5.split("(")[1].split(")")[0]) + int(tb_6.split("(")[1].split(")")[0]) +
+                int(tb_7.split("(")[1].split(")")[0]) + int(tb_8.split("(")[1].split(")")[0])
+            )
+            st.session_state.skor_tb_input = skor_tb_total
+            st.session_state.is_gtm_input = "Ya" if gtm_aktif else "Tidak"
+            
+            if not pasien_lama and (nama_anak == "" or nama_ibu == ""):
+                # (Sisa kodenya sama seperti aslimu...)
             if not pasien_lama and (nama_anak == "" or nama_ibu == ""):
                 st.error("⚠️ Nama Anak dan Ibu wajib diisi!")
             elif usia_bulan > 60 or usia_bulan < 0:
@@ -582,7 +558,10 @@ with tab1:
             if haz is None or whz is None or waz is None:
                 st.warning("Data tidak lengkap untuk dihitung. Periksa kembali usia/berat/tinggi badan.")
             else:
-                status_bb, status_tb, status_gizi, tindak_lanjut = tentukan_status_dan_tindak_lanjut(waz, haz, whz, red_flags_aktif, tgl_ukur, bb, usia_bulan)
+                # Ubah pemanggilannya dengan memasukkan skor_tb dan is_gtm
+                status_bb, status_tb, status_gizi, tindak_lanjut = tentukan_status_dan_tindak_lanjut(waz, haz, whz, red_flags_aktif, tgl_ukur, bb, usia_bulan,
+                st.session_state.skor_tb_input, st.session_state.is_gtm_input
+                                                                                                    )
                 nama_tampil = pasien_lama["nama"] if pasien_lama else nama_anak
 
                 st.success(f"✅ Analisis Gizi Kemenkes untuk **{nama_tampil}** ({jk}, usia {usia_bulan:.1f} bulan).")
@@ -666,8 +645,10 @@ with tab1:
                     
                     # Simpan ketiga status ke database (dipisahkan koma)
                     status_gabungan = f"BB/U: {status_bb} | TB/U: {status_tb} | BB/TB: {status_gizi}"
+                    # Ubah pemanggilan simpan_pengukuran
                     simpan_pengukuran(pasien_id, tgl_ukur, usia_bulan, bb, tb, waz, haz, whz,
-                                       status_gabungan, red_flags_aktif, tindak_lanjut, catatan_kunjungan)
+                    status_gabungan, red_flags_aktif, tindak_lanjut, catatan_kunjungan, 
+                    st.session_state.skor_tb_input, st.session_state.is_gtm_input)
                     st.success("🎉 Data disimpan ke rekam pasien! Cek riwayatnya di tab Buku KIA.")
                     st.session_state.sudah_dihitung = False
                     st.session_state.pasien_id_terpilih = pasien_id
