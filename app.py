@@ -3,6 +3,7 @@ import requests
 import sqlite3
 import os
 import io
+import re
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 import plotly.graph_objects as go
@@ -12,7 +13,7 @@ from decimal import Decimal, InvalidOperation
 from pygrowup import Calculator
 from pygrowup import exceptions as pg_exceptions
 
-# --- 0. KONFIGURASI DATABASE (SQLite lokal, di folder yang sama dengan app.py) ---
+# --- 0. KONFIGURASI DATABASE (SQLite lokal) ---
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sipenting.db")
 
 def get_conn():
@@ -55,7 +56,7 @@ def init_db():
         )
     ''')
     
-    # KODE SAKTI AUTO-MIGRASI 
+    # Auto-Migrasi Kolom Baru
     c.execute("PRAGMA table_info(pengukuran)")
     columns = [col[1] for col in c.fetchall()]
     if 'skor_tb' not in columns:
@@ -66,15 +67,44 @@ def init_db():
     conn.commit()
     conn.close()
 
+# --- FUNGSI INTERPRETASI INDIVIDU (Untuk UI & Tabel) ---
+def interpretasi_bb(waz):
+    if waz is None or pd.isna(waz): return "-"
+    w = float(waz)
+    if w < -3: return "Sangat Kurang"
+    elif w < -2: return "Kurang"
+    elif w <= 1: return "Normal"
+    else: return "Risiko BB Lebih"
+    
+def interpretasi_tb(haz):
+    if haz is None or pd.isna(haz): return "-"
+    h = float(haz)
+    if h < -3: return "Sangat Pendek"
+    elif h < -2: return "Pendek"
+    elif h <= 3: return "Normal"
+    else: return "Tinggi"
+    
+def interpretasi_gizi(whz):
+    if whz is None or pd.isna(whz): return "-"
+    w = float(whz)
+    if w < -3: return "Gizi Buruk"
+    elif w < -2: return "Gizi Kurang"
+    elif w <= 1: return "Gizi Baik"
+    elif w <= 2: return "Berisiko Gizi Lebih"
+    elif w <= 3: return "Gizi Lebih"
+    else: return "Obesitas"
+
+def ekstrak_skor(teks):
+    """Fungsi anti-error untuk mengekstrak angka di dalam kurung opsi pilihan"""
+    match = re.search(r'\((\d+)\)', teks)
+    return int(match.group(1)) if match else 0
+
+# --- FUNGSI DATABASE STANDAR ---
 def cari_pasien(keyword):
-    if not keyword or keyword.strip() == "":
-        return []
+    if not keyword or keyword.strip() == "": return []
     conn = get_conn()
     like = f"%{keyword.strip()}%"
-    rows = conn.execute(
-        "SELECT * FROM pasien WHERE no_rm LIKE ? OR nama LIKE ? ORDER BY nama LIMIT 20",
-        (like, like)
-    ).fetchall()
+    rows = conn.execute("SELECT * FROM pasien WHERE no_rm LIKE ? OR nama LIKE ? ORDER BY nama LIMIT 20", (like, like)).fetchall()
     conn.close()
     return rows
 
@@ -93,8 +123,7 @@ def get_semua_pasien():
 def simpan_pasien_baru(no_rm, nama, nama_ibu, alamat, tanggal_lahir, jenis_kelamin):
     conn = get_conn()
     cur = conn.execute(
-        """INSERT INTO pasien (no_rm, nama, nama_ibu, alamat, tanggal_lahir, jenis_kelamin)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+        "INSERT INTO pasien (no_rm, nama, nama_ibu, alamat, tanggal_lahir, jenis_kelamin) VALUES (?, ?, ?, ?, ?, ?)",
         (no_rm, nama, nama_ibu, alamat, tanggal_lahir.isoformat(), jenis_kelamin)
     )
     conn.commit()
@@ -115,10 +144,7 @@ def simpan_pengukuran(pasien_id, tgl_ukur, usia_bulan, bb, tb, waz, haz, whz, st
 
 def get_riwayat_pengukuran(pasien_id):
     conn = get_conn()
-    rows = conn.execute(
-        "SELECT * FROM pengukuran WHERE pasien_id = ? ORDER BY tanggal_ukur ASC",
-        (pasien_id,)
-    ).fetchall()
+    rows = conn.execute("SELECT * FROM pengukuran WHERE pasien_id = ? ORDER BY tanggal_ukur ASC", (pasien_id,)).fetchall()
     conn.close()
     return rows
 
@@ -172,8 +198,7 @@ def get_tren_kunjungan_mingguan():
     conn = get_conn()
     rows = conn.execute("SELECT tanggal_ukur FROM pengukuran ORDER BY tanggal_ukur").fetchall()
     conn.close()
-    if not rows:
-        return pd.DataFrame({"minggu": [], "jumlah": []})
+    if not rows: return pd.DataFrame({"minggu": [], "jumlah": []})
     df = pd.DataFrame({"tanggal_ukur": [r["tanggal_ukur"] for r in rows]})
     df["tanggal_ukur"] = pd.to_datetime(df["tanggal_ukur"])
     df["minggu"] = df["tanggal_ukur"].dt.strftime("%Y-W%U")
@@ -237,10 +262,7 @@ col_kiri, col_tengah, col_kanan = st.columns([1.2, 5, 1.8])
 
 with col_kiri:
     st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-    st.markdown(
-        '<img src="https://raw.githubusercontent.com/rizkinovaln03/sipenting-sumber/main/logo.png" style="width:100%; object-fit:contain;">',
-        unsafe_allow_html=True
-    )
+    st.markdown('<img src="https://raw.githubusercontent.com/rizkinovaln03/sipenting-sumber/main/logo.png" style="width:100%; object-fit:contain;">', unsafe_allow_html=True)
 
 with col_tengah:
     st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
@@ -248,10 +270,7 @@ with col_tengah:
     st.markdown("<div class='sub-title'>Sistem Pencegahan & Edukasi Stunting Terintegrasi | Puskesmas Sumber</div>", unsafe_allow_html=True)
 
 with col_kanan:
-    st.markdown(
-        '<img src="https://raw.githubusercontent.com/rizkinovaln03/sipenting-sumber/main/sipenting.png" style="width:100%; object-fit:contain;">', 
-        unsafe_allow_html=True
-    )
+    st.markdown('<img src="https://raw.githubusercontent.com/rizkinovaln03/sipenting-sumber/main/sipenting.png" style="width:100%; object-fit:contain;">', unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -269,8 +288,7 @@ def hitung_zscore(bb, tb, usia_bulan, jk):
         try:
             z = calc.zscore_for_measurement(indicator, measurement, usia_bulan, sex_code, height=height)
             return round(float(z), 2)
-        except (pg_exceptions.InvalidMeasurement, pg_exceptions.DataNotFound,
-                InvalidOperation, AssertionError, TypeError, ValueError) as e:
+        except (pg_exceptions.InvalidMeasurement, pg_exceptions.DataNotFound, InvalidOperation, AssertionError, TypeError, ValueError) as e:
             errors.append(f"{indicator.upper()}: {e}")
             return None
 
@@ -285,14 +303,12 @@ def get_kurva_haz(jk):
     table = calc.lhfa_boys_0_5 if jk == "Laki-laki" else calc.lhfa_girls_0_5
     bulan, median, sd2neg, sd3neg = [], [], [], []
     for k, v in table.items():
-        if k == "field_name":
-            continue
+        if k == "field_name": continue
         bulan.append(float(v["Month"]))
         median.append(float(v["SD0"]))
         sd2neg.append(float(v["SD2neg"]))
         sd3neg.append(float(v["SD3neg"]))
-    df = pd.DataFrame({"bulan": bulan, "median": median, "sd2neg": sd2neg, "sd3neg": sd3neg}).sort_values("bulan")
-    return df
+    return pd.DataFrame({"bulan": bulan, "median": median, "sd2neg": sd2neg, "sd3neg": sd3neg}).sort_values("bulan")
     
 @st.cache_data
 def get_kurva_waz(jk):
@@ -332,9 +348,9 @@ def get_kurva_whz(jk, usia_bulan):
     return df.sort_values("tinggi"), is_length
 
 def tentukan_status_dan_tindak_lanjut(waz, haz, whz, red_flags_aktif, tgl_ukur, bb, usia_bulan, skor_tb, is_gtm):
-    status_bb = "Normal" if waz is not None and waz >= -2 else ("Kurang" if waz and waz >= -3 else "Sangat Kurang")
-    status_tb = "Normal" if haz is not None and haz >= -2 else ("Pendek" if haz and haz >= -3 else "Sangat Pendek")
-    status_gizi = "Gizi Baik" if whz is not None and -2 <= whz <= 1 else ("Gizi Kurang" if whz and -3 <= whz < -2 else "Gizi Buruk/Lebih")
+    status_bb = interpretasi_bb(waz)
+    status_tb = interpretasi_tb(haz)
+    status_gizi = interpretasi_gizi(whz)
 
     if haz is None: return None, None, None, None
     status = "Normal" if haz >= -2 else ("Severely Stunted" if haz < -3 else "Stunted")
@@ -387,7 +403,7 @@ def tentukan_status_dan_tindak_lanjut(waz, haz, whz, red_flags_aktif, tgl_ukur, 
 tab1, tab2, tab3 = st.tabs(["🧮 Skrining & Kurva", "📖 Buku KIA & Monitoring", "⚖️ Referensi Klinis"])
 
 # ==========================================
-# TAB 1: KALKULATOR & KURVA PERTUMBUHAN + REGISTRASI/SEARCH PASIEN
+# TAB 1: KALKULATOR & KURVA PERTUMBUHAN
 # ==========================================
 with tab1:
     if "pasien_id_terpilih" not in st.session_state:
@@ -482,18 +498,9 @@ with tab1:
         st.info(f"Usia Presisi: {selisih.years} Tahun, {selisih.months} Bulan, {selisih.days} Hari")
 
         if hitung_ditekan:
-            skor_tb_total = (
-                int(tb_1.split("(")[1].split(")")[0]) + int(tb_2.split("(")[1].split(")")[0]) +
-                int(tb_3.split("(")[1].split(")")[0]) + int(tb_4.split("(")[1].split(")")[0]) +
-                int(tb_5.split("(")[1].split(")")[0]) + int(tb_6.split("(")[1].split(")")[0]) +
-                int(tb_7.split("(")[1].split(")")[0]) + int(tb_8.split("(")[1].split(")")[0])
-            )
-            st.session_state.skor_tb_input = skor_tb_total
-            
-            skor_gtm_total = (
-                int(gtm_1.split("(")[1].split(")")[0]) + int(gtm_2.split("(")[1].split(")")[0]) +
-                int(gtm_3.split("(")[1].split(")")[0]) + int(gtm_4.split("(")[1].split(")")[0])
-            )
+            # Algoritma ekstraksi kebal error
+            st.session_state.skor_tb_input = sum([ekstrak_skor(x) for x in [tb_1, tb_2, tb_3, tb_4, tb_5, tb_6, tb_7, tb_8]])
+            skor_gtm_total = sum([ekstrak_skor(x) for x in [gtm_1, gtm_2, gtm_3, gtm_4]])
             st.session_state.is_gtm_input = "Ya" if skor_gtm_total > 0 else "Tidak"
             
             if not pasien_lama and (nama_anak == "" or nama_ibu == ""):
@@ -641,14 +648,22 @@ with tab2:
         if not riwayat:
             st.warning("Pasien ini belum punya riwayat pengukuran.")
         else:
+            # KOLOM TABEL SUPER RAPI DAN URUT!
             df_riwayat = pd.DataFrame([{
-                "Tanggal": r["tanggal_ukur"], "Usia (bln)": round(r["usia_bulan"], 1),
-                "BB (kg)": r["bb"], "TB (cm)": r["tb"],
-                "WAZ": r["waz"], "HAZ": r["haz"], "WHZ": r["whz"],
-                "Status Gizi": r["status_gizi"],
+                "Tanggal": r["tanggal_ukur"], 
+                "Usia(bln)": round(r["usia_bulan"], 1),
+                "BB(kg)": r["bb"], 
+                "TB(cm)": r["tb"],
+                "WAZ": r["waz"], 
+                "Status BB/U": interpretasi_bb(r["waz"]),
+                "HAZ": r["haz"], 
+                "Status TB/U": interpretasi_tb(r["haz"]),
+                "WHZ": r["whz"],
+                "Status BB/TB": interpretasi_gizi(r["whz"]),
                 "Red Flag": "🚨" if r["red_flag"] else "-",
-                "Tindak Lanjut": r["tindak_lanjut"],
-                "Catatan": r["catatan"] or "-"
+                "Skor TB": r["skor_tb"],
+                "GTM": r["is_gtm"],
+                "Tindak Lanjut": r["tindak_lanjut"]
             } for r in riwayat])
             st.markdown("**📋 Riwayat Pengukuran**")
             st.dataframe(df_riwayat, use_container_width=True, hide_index=True)
